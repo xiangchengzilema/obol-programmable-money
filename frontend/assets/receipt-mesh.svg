@@ -1,0 +1,30 @@
+<svg width="520" height="620" viewBox="0 0 520 620" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1" y="1" width="518" height="618" rx="8" fill="#0A0F12" fill-opacity=".72" stroke="#E7EEF2" stroke-opacity=".09"/>
+  <g opacity=".54">
+    <path d="M64 86H456" stroke="#E7EEF2" stroke-opacity=".16"/>
+    <path d="M64 158H456" stroke="#E7EEF2" stroke-opacity=".10"/>
+    <path d="M64 230H456" stroke="#E7EEF2" stroke-opacity=".10"/>
+    <path d="M64 302H456" stroke="#E7EEF2" stroke-opacity=".10"/>
+    <path d="M64 374H456" stroke="#E7EEF2" stroke-opacity=".10"/>
+    <path d="M64 446H456" stroke="#E7EEF2" stroke-opacity=".10"/>
+    <path d="M64 518H456" stroke="#E7EEF2" stroke-opacity=".16"/>
+  </g>
+  <g font-family="JetBrains Mono, monospace" font-size="13">
+    <text x="64" y="58" fill="#F0C969">OBOL RECEIPT</text>
+    <text x="64" y="128" fill="#A4B0B8">creator</text>
+    <text x="312" y="128" fill="#F2F6F7">Rina Park</text>
+    <text x="64" y="200" fill="#A4B0B8">amount</text>
+    <text x="312" y="200" fill="#64E6BD">$0.014 USDC</text>
+    <text x="64" y="272" fill="#A4B0B8">execution</text>
+    <text x="312" y="272" fill="#F2F6F7">Circle Wallets</text>
+    <text x="64" y="344" fill="#A4B0B8">network</text>
+    <text x="312" y="344" fill="#65D9F2">Arc Testnet</text>
+    <text x="64" y="416" fill="#A4B0B8">proof</text>
+    <text x="312" y="416" fill="#64E6BD">0xba28...0ae6</text>
+    <text x="64" y="488" fill="#A4B0B8">status</text>
+    <text x="312" y="488" fill="#64E6BD">confirmed</text>
+  </g>
+  <path d="M64 552H456" stroke="#64E6BD" stroke-opacity=".32"/>
+  <circle cx="432" cy="552" r="7" fill="#64E6BD"/>
+  <circle cx="408" cy="552" r="5" fill="#65D9F2" fill-opacity=".72"/>
+</svg>

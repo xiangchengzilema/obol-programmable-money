@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Obol - AI agents pay creators per read</title>
+  <meta name="description" content="Obol is a live Arc Testnet settlement console for AI-agent paid reads, creator revenue, Circle Wallets, and verifiable txHash receipts." />
+  <link rel="stylesheet" href="styles.css?v=20260702-ledger-readable-1" />
+  <link rel="stylesheet" href="premium.css?v=20260702-v7" />
+  <link rel="stylesheet" href="reference-redesign.css?v=20260702-v1" />
+  <link rel="stylesheet" href="cinematic-motion.css?v=20260702-v1" />
+  <link rel="stylesheet" href="agency-redesign.css?v=20260706-v26" />
+</head>
+<body>
+  <div class="ambient-stage" aria-hidden="true">
+    <span class="scanline"></span>
+    <span class="orbital orbital-one"></span>
+    <span class="orbital orbital-two"></span>
+    <span class="signal-line signal-a"></span>
+    <span class="signal-line signal-b"></span>
+    <span class="aurora aurora-a"></span>
+    <span class="aurora aurora-b"></span>
+    <span class="aurora aurora-c"></span>
+    <span class="cursor-glow"></span>
+  </div>
+  <header class="topbar">
+    <a class="brand" data-view="home" href="#">
+      <span class="coinmark" aria-hidden="true">O</span>
+      <span>
+        <strong>Obol</strong>
+        <small>Settlement command center</small>
+      </span>
+    </a>
+    <nav class="nav" aria-label="Primary navigation">
+      <button class="navbtn active" data-view="home">Overview</button>
+      <button class="navbtn" data-view="console">Agent Console</button>
+      <button class="navbtn" data-view="market">Marketplace</button>
+      <button class="navbtn" data-view="creators">Creators</button>
+      <button class="navbtn" data-view="x402">x402</button>
+      <button class="navbtn" data-view="traction">Traction</button>
+    </nav>
+    <div class="system-state">
+      <span id="mode-pill" class="pill pill-muted">connecting</span>
+      <button class="topbar-cta" id="topbar-demo-btn">Run demo</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="view-home" class="view active">
+      <div class="hero-grid">
+        <div class="obol-visuals" aria-hidden="true">
+          <img class="visual-orbit" src="assets/obol-orbit.svg" alt="" />
+          <img class="visual-route" src="assets/agent-route.svg" alt="" />
+          <img class="visual-receipt" src="assets/receipt-mesh.svg" alt="" />
+        </div>
+        <div class="settlement-constellation" aria-hidden="true">
+          <span class="constellation-node node-agent">agent intent</span>
+          <span class="constellation-node node-wallet">Circle wallet</span>
+          <span class="constellation-node node-arc">Arc txHash</span>
+          <span class="constellation-node node-creator">creator paid</span>
+          <span class="constellation-pulse pulse-a"></span>
+          <span class="constellation-pulse pulse-b"></span>
+          <span class="constellation-pulse pulse-c"></span>
+        </div>
+        <aside class="telemetry-rail" aria-label="Live telemetry window">
+          <span>live monitor</span>
+          <strong id="daemon-paid">-- paid reads</strong>
+          <small id="daemon-state">checking runner</small>
+        </aside>
+        <div class="hero-copy">
+          <p class="eyebrow">Arc Testnet settlement layer</p>
+          <h1>
+            <span>Agent reads.</span>
+            <span>Creator gets paid.</span>
+            <span>Arc proves it.</span>
+          </h1>
+          <p class="lead">
+            Obol is a live settlement console for machine readers: the agent scores paid sources,
+            Circle moves USDC, creators receive revenue, and Arc returns the txHash.
+          </p>
+          <div id="payment-bubble-stream" class="payment-bubble-stream" aria-label="Live creator payment notifications">
+            <div class="payment-bubble-track">
+              <span class="payment-bubble is-loading">loading live creator payments...</span>
+            </div>
+          </div>
+          <div class="problem-rail" aria-label="Problem and resolution">
+            <div>
+              <span>Problem</span>
+              <strong>AI reads do not pay</strong>
+            </div>
+            <div>
+              <span>Resolution</span>
+              <strong>Per-read USDC settlement</strong>
+            </div>
+            <div>
+              <span>Proof</span>
+              <strong>Circle id + Arc txHash</strong>
+            </div>
+          </div>
+          <div class="hero-actions">
+            <button class="primary" data-view="console">Run agent payment</button>
+            <button class="secondary" id="demo-path-btn">Start judge demo</button>
+            <button class="secondary" data-view="creators">Open creator studio</button>
+          </div>
+          <div class="trust-rail" aria-label="Trust claims">
+            <span><b>01</b> Agent chooses source</span>
+            <span><b>02</b> Circle signs transfer</span>
+            <span><b>03</b> Arc returns proof</span>
+          </div>
+        </div>
+        <aside class="proof-card" aria-label="Live transaction proof">
+          <div class="proof-card-head">
+            <span class="eyebrow">Live proof</span>
+            <span id="hero-proof-status" class="pill pill-muted">checking</span>
+          </div>
+          <div class="proof-main">
+            <div>
+              <div class="amount" id="hero-proof-amount">$0.010</div>
+              <p>paid to creators</p>
+            </div>
+            <strong id="hero-proof-title">Settlement portfolio</strong>
+          </div>
+          <div class="proof-route" aria-label="Payment route">
+            <div><span>Execution</span><strong>Circle</strong></div>
+            <div><span>Network</span><strong>Arc Testnet</strong></div>
+            <div><span>Asset</span><strong>USDC</strong></div>
+          </div>
+          <div class="settlement-timeline" aria-label="Settlement lifecycle">
+            <span class="done">Selected</span>
+            <span class="done">Authorized</span>
+            <span class="done">Submitted</span>
+            <span class="done">Confirmed</span>
+          </div>
+          <a class="tx-row" id="hero-proof-link" href="#" aria-label="Latest transaction hash">
+            <span>TxHash</span>
+            <code id="hero-proof-hash">waiting for Arc txHash</code>
+          </a>
+          <p class="proof-footnote">No platform operator marks this as paid. Circle executes the wallet action; Arc returns the settlement proof.</p>
+          <div class="agent-trace-mini">
+            <div class="trace-top">
+              <strong>Agent proof trace</strong>
+              <span>live on Arc</span>
+            </div>
+            <p><b>01</b><span>Score source fit and price</span></p>
+            <p><b>02</b><span>Buy the selected creator note</span></p>
+            <p><b>03</b><span>Settle through Circle on Arc Testnet</span></p>
+          </div>
+          <div class="terminal-feed" aria-label="Latest live receipts">
+            <div class="terminal-feed-head">
+              <span></span><span></span><span></span>
+              <strong>live_receipts.stream</strong>
+            </div>
+            <div id="hero-live-feed" class="terminal-feed-body">
+              <p>waiting for ledger...</p>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="stats-grid compact-stats" id="stats-grid"></div>
+
+      <section class="command-deck" aria-label="Settlement command deck">
+        <article>
+          <span>12h window</span>
+          <strong id="deck-window">usage runner synced</strong>
+          <p>background buyers create real Arc receipts over time</p>
+        </article>
+        <article>
+          <span>market depth</span>
+          <strong id="deck-market">100 paid sources</strong>
+          <p>priced content for agent-side relevance scoring</p>
+        </article>
+        <article>
+          <span>creator side</span>
+          <strong id="deck-creators">wallet payouts live</strong>
+          <p>each receipt points to a creator revenue wallet</p>
+        </article>
+      </section>
+
+      <section class="live-proof" id="live-proof">
+        <div>
+          <span class="section-label">Live Arc proof</span>
+          <h3>Waiting for a completed receipt</h3>
+          <p>Run the paying agent to produce a Circle transaction and Arc Testnet tx hash.</p>
+        </div>
+        <span class="pill pill-muted">checking</span>
+      </section>
+
+      <section class="demo-director" aria-label="Judge demo route">
+        <article>
+          <span>Intent</span>
+          <strong>Agent needs a paid source</strong>
+          <p>Budgeted content request</p>
+        </article>
+        <article>
+          <span>Decision</span>
+          <strong>Best source selected</strong>
+          <p>Low relevance skipped</p>
+        </article>
+        <article>
+          <span>Settlement</span>
+          <strong id="demo-director-amount">$0.0000 USDC</strong>
+          <p>Circle Wallets / Arc</p>
+        </article>
+        <article>
+          <span>Receipt</span>
+          <strong id="demo-director-hash">waiting</strong>
+          <p>txHash proves payment</p>
+        </article>
+      </section>
+
+      <div class="proof-grid">
+        <article>
+          <span class="proof-num">01</span>
+          <h3>Visible agency</h3>
+          <p>The agent logs each buy, reuse, and skip with a reason, so spending is accountable instead of black-box automation.</p>
+        </article>
+        <article>
+          <span class="proof-num">02</span>
+          <h3>Per-read creator revenue</h3>
+          <p>Every paid read becomes a receipt tied to a creator, article, amount, Circle transaction id, and Arc testnet hash.</p>
+        </article>
+        <article>
+          <span class="proof-num">03</span>
+          <h3>HTTP-native paywall</h3>
+          <p>External agents can hit an x402 endpoint, get a 402 challenge, pay, and retry for the full content.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="view-console" class="view">
+      <div class="view-head">
+        <div>
+          <p class="eyebrow">Autonomous paying researcher</p>
+          <h2>Agent Console</h2>
+          <p>Ask a question with a budget. Watch the agent buy only what it needs, preserve money when coverage is enough, and reuse cached reads for free.</p>
+        </div>
+        <div class="head-actions">
+          <button class="primary" id="quick-demo-btn">Replay latest live proof</button>
+          <button class="secondary" id="reset-demo-btn" title="Reseed the local demo database">Reset demo data</button>
+        </div>
+      </div>
+
+      <div class="console-layout">
+        <aside class="run-panel">
+          <label>Question
+            <textarea id="q-input" rows="4">how do nanopayments and Arc fees work for agent APIs</textarea>
+          </label>
+          <div class="inline-fields">
+            <label>Budget
+              <input id="b-input" type="number" step="0.005" min="0.001" value="0.05" />
+            </label>
+            <label>Currency
+              <input value="USDC" disabled />
+            </label>
+          </div>
+          <button id="run-btn" class="primary full">Run agent</button>
+          <div class="examples">
+            <span>Scenarios</span>
+            <button class="chip" data-q="reputation and trust between agents" data-b="0.05">trust & reputation</button>
+            <button class="chip" data-q="pricing per-call vs subscription for agent services" data-b="0.03">API pricing</button>
+            <button class="chip" data-q="what are nanopayments" data-b="0.005">tiny budget</button>
+          </div>
+        </aside>
+
+        <section class="result-stage" id="run-result">
+          <div class="empty-state" id="empty-run">
+            <span class="coinmark large">O</span>
+          <h3>Ready to authorize a paid read.</h3>
+            <p>Run a query to see decision, settlement, and proof in one flow.</p>
+          </div>
+
+          <div class="run-dashboard hidden" id="run-dashboard">
+            <section class="chain-lens" id="chain-lens" aria-label="On-chain proof lens">
+              <article>
+                <span>Intent</span>
+                <strong id="lens-intent">Agent has a budgeted query</strong>
+                <p>No subscription. One task.</p>
+              </article>
+              <article>
+                <span>Decision</span>
+                <strong id="lens-decision">Waiting for source choice</strong>
+                <p>Buy / reuse / skip</p>
+              </article>
+              <article>
+                <span>Execution</span>
+                <strong id="lens-execution">Waiting for settlement</strong>
+                <p>Circle Wallets / USDC</p>
+              </article>
+              <article>
+                <span>Receipt</span>
+                <strong id="lens-receipt">Waiting for txHash</strong>
+                <p>Arc proves the read</p>
+              </article>
+            </section>
+            <div class="run-steps" id="run-steps" aria-label="Agent settlement steps">
+              <span class="active">Read intent</span>
+              <span>Choose source</span>
+              <span>Move USDC</span>
+              <span>Show receipt</span>
+            </div>
+            <section class="agent-market-scan" aria-label="Agent marketplace scan">
+              <div class="scan-head">
+                <div>
+                  <span class="section-label">Live market scan</span>
+                  <strong id="scan-headline">Waiting for agent run</strong>
+                </div>
+                <span id="scan-status" class="scan-status">idle</span>
+              </div>
+              <div class="scan-lane" id="scan-lane"></div>
+            </section>
+            <div class="plan-card">
+              <span class="section-label">Plan</span>
+              <p id="r-plan"></p>
+            </div>
+            <div class="metric-row" id="r-summary"></div>
+            <div class="coverage-card">
+              <div>
+                <span class="section-label" id="coverage-title">Query Coverage</span>
+                <strong id="coverage-label">0%</strong>
+                <p id="coverage-note" class="coverage-note">Waiting for agent decisions.</p>
+              </div>
+              <div class="coverage-track"><span id="coverage-bar"></span></div>
+            </div>
+            <div class="result-proof-grid" id="r-proof-grid"></div>
+          </div>
+        </section>
+      </div>
+
+      <div id="decision-section" class="detail-grid hidden">
+        <section class="panel wide">
+          <div class="panel-head">
+            <div>
+              <span class="section-label">Decision log</span>
+              <h3>Every payment has a reason</h3>
+            </div>
+            <div class="legend">
+              <span class="dot buy"></span>buy
+              <span class="dot reuse"></span>reuse
+              <span class="dot skip"></span>skip
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="decisions">
+              <thead>
+                <tr>
+                  <th>Decision</th><th>Source</th><th>Creator</th><th>Relevance</th><th>Price</th><th>Reason</th>
+                </tr>
+              </thead>
+              <tbody id="r-decisions"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <span class="section-label">Receipts</span>
+              <h3>Arc settlement</h3>
+            </div>
+            <span id="r-confidence" class="pill pill-muted"></span>
+          </div>
+          <div id="r-receipts" class="receipts"></div>
+        </section>
+
+        <section class="panel answer-panel">
+          <div class="panel-head">
+            <div>
+              <span class="section-label">Cited answer</span>
+              <h3>Only paid or reused sources</h3>
+            </div>
+          </div>
+          <pre id="r-answer" class="answer"></pre>
+        </section>
+      </div>
+    </section>
+
+    <section id="view-market" class="view">
+      <div class="view-head">
+        <div>
+          <p class="eyebrow">Paywalled source market</p>
+          <h2>Marketplace</h2>
+          <p>Public previews stay readable. Full content requires an Obol unlock, agent purchase, or x402 payment proof.</p>
+        </div>
+        <input id="market-search" class="search" type="search" placeholder="Search by title, tag, or summary" />
+      </div>
+      <div id="market-grid" class="market-grid"></div>
+    </section>
+
+    <section id="view-creators" class="view">
+      <div class="view-head">
+        <div>
+          <p class="eyebrow">Creator revenue console</p>
+          <h2>Creator Studio</h2>
+          <p>List an article, price a read, then watch earnings update when agents pay to consume it.</p>
+        </div>
+      </div>
+
+      <div class="creator-studio">
+        <form id="article-form" class="panel create-form">
+          <span class="section-label">Publish paywalled source</span>
+          <label>Creator
+            <select id="article-creator"></select>
+          </label>
+          <label>Title
+            <input id="article-title" value="Arc settlement notes for autonomous readers" />
+          </label>
+          <div class="inline-fields">
+            <label>Price (USDC)
+              <input id="article-price" type="number" step="0.001" min="0" value="0.018" />
+            </label>
+            <label>Tags
+              <input id="article-tags" value="arc,agents,receipts" />
+            </label>
+          </div>
+          <label>Summary
+            <input id="article-summary" value="Why predictable settlement makes agent-paid reading economical." />
+          </label>
+          <label>Content
+            <textarea id="article-content" rows="5">Autonomous readers need a payment rail that is cheap, fast, and auditable. Arc's USDC-denominated settlement lets agents pay per article without subscriptions, while Obol keeps a receipt and a decision reason for each read.</textarea>
+          </label>
+          <button class="primary full" type="submit">Publish article</button>
+          <p id="article-form-msg" class="form-msg"></p>
+        </form>
+
+        <div class="creators-layout">
+          <ul id="creator-list" class="creator-list"></ul>
+          <div id="creator-detail" class="panel creator-detail">
+            <p class="muted">Select a creator to see earnings.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-x402" class="view">
+      <div class="view-head">
+        <div>
+          <p class="eyebrow">Machine-payable content</p>
+          <h2>x402 flow</h2>
+          <p>External agents can request a source, receive a 402 Payment Required challenge, then retry with a payment proof to unlock content.</p>
+        </div>
+      </div>
+      <div class="x402-grid">
+        <section class="panel">
+          <span class="section-label">Step 1</span>
+          <h3>Request locked content</h3>
+          <label>Article
+            <select id="x402-article"></select>
+          </label>
+          <button id="x402-challenge-btn" class="secondary full">Get 402 challenge</button>
+          <pre id="x402-challenge" class="codebox">{
+  "status": "waiting",
+  "next": "click Get 402 challenge",
+  "expected": "402 Payment Required + accepted USDC rail"
+}</pre>
+        </section>
+        <section class="panel">
+          <span class="section-label">Step 2</span>
+          <h3>Retry with X-Payment</h3>
+          <label>Payment proof
+            <input id="x402-proof" value="0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" />
+          </label>
+          <button id="x402-pay-btn" class="primary full">Pay and unlock</button>
+          <pre id="x402-unlocked" class="codebox">{
+  "status": "waiting",
+  "next": "submit X-Payment proof",
+  "result": "full article + creator receipt"
+}</pre>
+        </section>
+      </div>
+    </section>
+
+    <section id="view-traction" class="view">
+      <div class="view-head">
+        <div>
+          <p class="eyebrow">Proof of use</p>
+          <h2>Traction ledger</h2>
+          <p>Confirmed reads, creator payments, and Arc tx hashes in one ledger.</p>
+        </div>
+        <button id="refresh-traction-btn" class="secondary">Refresh evidence</button>
+      </div>
+
+      <section class="panel settlement-panel">
+        <div class="panel-head">
+          <div>
+            <span class="section-label">Settlement readiness</span>
+            <h3>Arc / Circle status</h3>
+          </div>
+          <span id="settlement-readiness-pill" class="pill pill-muted">checking</span>
+        </div>
+        <div id="settlement-status" class="settlement-status"></div>
+      </section>
+
+      <section class="proof-metrics" id="proof-metrics">
+        <article>
+          <span id="traction-runs">0</span>
+          <p>agent runs</p>
+        </article>
+        <article>
+          <span id="traction-receipts">0</span>
+          <p>live receipts</p>
+        </article>
+        <article>
+          <span id="traction-paid">$0.0000</span>
+          <p>USDC paid</p>
+        </article>
+        <article>
+          <span id="traction-saved">$0.0000</span>
+          <p>saved by reuse</p>
+        </article>
+      </section>
+
+      <section class="persona-strip" aria-label="Demo evaluation personas">
+        <article>
+          <span>Creator economist</span>
+          <strong>tests per-read revenue</strong>
+          <p>demo persona</p>
+        </article>
+        <article>
+          <span>Skeptical publisher</span>
+          <strong>checks locked previews</strong>
+          <p>demo persona</p>
+        </article>
+        <article>
+          <span>Budget researcher</span>
+          <strong>runs paid queries</strong>
+          <p>demo persona</p>
+        </article>
+        <article>
+          <span>API tool builder</span>
+          <strong>tries x402 unlocks</strong>
+          <p>demo persona</p>
+        </article>
+        <article>
+          <span>Security auditor</span>
+          <strong>checks cache boundaries</strong>
+          <p>demo persona</p>
+        </article>
+      </section>
+
+      <section class="evaluation-lab" aria-label="Evaluation persona notes">
+        <div class="panel-head">
+          <div>
+            <span class="section-label">Evaluation activity</span>
+            <h3>Five demo personas exercised the product</h3>
+          </div>
+          <span class="pill pill-muted">simulated, labeled</span>
+        </div>
+        <div class="eval-grid">
+          <article>
+            <span>Creator economist</span>
+            <p>Finding: earnings ledger is the clearest creator-facing proof.</p>
+          </article>
+          <article>
+            <span>Skeptical publisher</span>
+            <p>Finding: locked previews plus receipts make AI access legible.</p>
+          </article>
+          <article>
+            <span>Budget researcher</span>
+            <p>Finding: buy/skip log proves the agent stopped spending.</p>
+          </article>
+          <article>
+            <span>API tool builder</span>
+            <p>Finding: x402 gives builders a copyable machine-payable surface.</p>
+          </article>
+          <article>
+            <span>Security auditor</span>
+            <p>Finding: cache boundaries protect creator revenue from replay.</p>
+          </article>
+        </div>
+      </section>
+
+      <div class="traction-grid">
+        <section class="panel">
+          <span class="section-label">Recent agent runs</span>
+          <div id="recent-runs" class="evidence-list"></div>
+        </section>
+        <section class="panel ledger-panel">
+          <div class="ledger-head">
+            <span class="section-label">Payment ledger</span>
+            <small>Open any receipt proof</small>
+          </div>
+          <div id="ledger-list" class="ledger-list"></div>
+        </section>
+      </div>
+
+      <aside id="receipt-drawer" class="receipt-drawer hidden" aria-label="Receipt details">
+        <div class="drawer-head">
+          <div>
+            <span class="section-label">Receipt detail</span>
+            <h3 id="drawer-title">Payment receipt</h3>
+          </div>
+          <button id="drawer-close" class="icon-button" aria-label="Close receipt detail">x</button>
+        </div>
+        <div id="drawer-body" class="drawer-body"></div>
+      </aside>
+    </section>
+  </main>
+
+  <aside class="purchase-popover hidden" id="purchase-popover" role="status" aria-live="polite">
+    <div class="purchase-top">
+      <span id="purchase-kicker">Purchase complete</span>
+      <button class="icon-button" id="purchase-close" aria-label="Close purchase proof">x</button>
+    </div>
+    <strong id="purchase-title">Source purchased</strong>
+    <p id="purchase-meta">Creator / amount</p>
+    <div class="purchase-proof">
+      <span id="purchase-proof-label">Arc proof</span>
+      <code id="purchase-proof">waiting</code>
+    </div>
+  </aside>
+
+  <div class="unlock-modal hidden" id="unlock-modal" role="status" aria-live="polite" aria-label="Unlock payment progress">
+    <section class="unlock-card">
+      <div class="purchase-top">
+        <span id="unlock-kicker">Unlocking source</span>
+        <button class="icon-button" id="unlock-close" aria-label="Close unlock status">x</button>
+      </div>
+      <strong id="unlock-title">Preparing payment</strong>
+      <p id="unlock-meta">Circle Wallets will settle this read on Arc Testnet.</p>
+      <div class="unlock-progress">
+        <span id="unlock-progress-bar"></span>
+      </div>
+      <div class="unlock-steps">
+        <span id="unlock-step-submit" class="active">Submit</span>
+        <span id="unlock-step-settle">Settle</span>
+        <span id="unlock-step-proof">Proof</span>
+      </div>
+      <div class="purchase-proof">
+        <span id="unlock-proof-label">Status</span>
+        <code id="unlock-proof">waiting for Circle</code>
+      </div>
+    </section>
+  </div>
+
+  <footer class="footer">
+    <span>Obol / Arc Programmable Money Hackathon</span>
+    <button id="api-base" class="api-button" title="Click to change backend API base"></button>
+  </footer>
+
+  <script src="app.js?v=20260702-neon-command-3"></script>
+</body>
+</html>
+

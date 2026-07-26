@@ -1,0 +1,23 @@
+<svg width="640" height="420" viewBox="0 0 640 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1" y="1" width="638" height="418" rx="8" fill="#091014" fill-opacity=".64" stroke="#E7EEF2" stroke-opacity=".09"/>
+  <path d="M64 126H204C242 126 252 178 288 178H358C397 178 406 236 446 236H576" stroke="#65D9F2" stroke-opacity=".34" stroke-width="2"/>
+  <path d="M64 286H186C230 286 236 242 284 242H356C396 242 404 190 446 190H576" stroke="#64E6BD" stroke-opacity=".30" stroke-width="2" stroke-dasharray="8 10"/>
+  <g font-family="JetBrains Mono, monospace" font-size="12">
+    <rect x="44" y="102" width="142" height="48" rx="8" fill="#11191F" stroke="#65D9F2" stroke-opacity=".20"/>
+    <text x="62" y="132" fill="#A4B0B8">agent intent</text>
+    <rect x="256" y="154" width="132" height="48" rx="8" fill="#11191F" stroke="#F0C969" stroke-opacity=".22"/>
+    <text x="276" y="184" fill="#F0C969">price score</text>
+    <rect x="444" y="166" width="150" height="48" rx="8" fill="#11191F" stroke="#64E6BD" stroke-opacity=".24"/>
+    <text x="464" y="196" fill="#64E6BD">creator paid</text>
+    <rect x="438" y="214" width="156" height="48" rx="8" fill="#11191F" stroke="#65D9F2" stroke-opacity=".20"/>
+    <text x="457" y="244" fill="#65D9F2">arc receipt</text>
+    <rect x="44" y="262" width="150" height="48" rx="8" fill="#11191F" stroke="#E7EEF2" stroke-opacity=".12"/>
+    <text x="62" y="292" fill="#A4B0B8">cached read</text>
+  </g>
+  <g opacity=".34">
+    <path d="M44 352H596" stroke="#E7EEF2" stroke-opacity=".14"/>
+    <path d="M44 72H596" stroke="#E7EEF2" stroke-opacity=".10"/>
+    <path d="M222 48V372" stroke="#E7EEF2" stroke-opacity=".08"/>
+    <path d="M416 48V372" stroke="#E7EEF2" stroke-opacity=".08"/>
+  </g>
+</svg>

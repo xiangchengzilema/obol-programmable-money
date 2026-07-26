@@ -1,0 +1,54 @@
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+**/.pytest_cache/
+
+# Local secrets and live testnet state
+.env
+*.env
+backend/.env
+backend-server.*.log
+backend/*.db
+backend/*.log
+backend/logs/
+backend/backups/
+backend/demo_*wallets.json
+backend/buyer_*.json
+backend/*wallet_pool*.json
+backend/usage_*state.json
+backend/usage_*log*.json*
+
+# Browser/video generation caches
+.claude/
+.chrome-*/
+screenshots/
+media/demo_draft/
+media/persona_evaluation_report.md
+
+# Keep only final submission media in git.
+media/*
+!media/submit/
+!media/submit/**
+
+# Frontend QA screenshots generated during design passes
+frontend-*.png
+qa-*.png
+
+# Dependencies/build output
+node_modules/
+**/node_modules/
+dist/
+build/
+coverage/
+**/.cache/
+
+# Tooling scratch/recovery files
+tools/circle-live-setup/recovery/
+tools/circle-live-setup/package-lock.json
+tools/py-tts/
+tools/remotion/public/*.mp4
+tools/remotion/public/*.wav
+tools/video-tools/*.mp4
+
+.DS_Store

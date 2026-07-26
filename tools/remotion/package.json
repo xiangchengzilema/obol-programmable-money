@@ -1,0 +1,16 @@
+{
+  "scripts": {
+    "render:v20": "remotion render src/index.jsx ObolDemo ../../media/demo_draft/obol_demo_v20_remotion.mp4 --codec h264 --crf 20",
+    "render:v21": "remotion render src/index.jsx ObolDemo ../../media/demo_draft/obol_demo_v21_indextts2_remotion.mp4 --codec h264 --crf 20",
+    "render:v21:caption-fixed": "remotion render src/index.jsx ObolDemo ../../media/demo_draft/obol_demo_v21_indextts2_caption_fixed.mp4 --codec h264 --crf 20",
+    "render:v22": "remotion render src/index.jsx ObolDemo ../../media/demo_draft/obol_demo_v22_indextts2_soft.mp4 --codec h264 --crf 20",
+    "render:v23": "remotion render src/index_v23.jsx ObolDemoV23 ../../media/demo_draft/obol_demo_v23_submit.mp4 --codec h264 --crf 19"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.482",
+    "@remotion/media-utils": "^4.0.482",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "remotion": "^4.0.482"
+  }
+}

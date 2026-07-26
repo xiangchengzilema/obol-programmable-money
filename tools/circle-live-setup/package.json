@@ -1,0 +1,19 @@
+{
+  "name": "obol-circle-live-setup",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "register-entity-secret": "tsx --env-file=../../backend/.env register-entity-secret.ts",
+    "create-wallet": "tsx --env-file=../../backend/.env create-wallet.ts",
+    "check-wallet": "tsx --env-file=../../backend/.env check-wallet.ts",
+    "faucet": "tsx --env-file=../../backend/.env faucet-testnet-usdc.ts"
+  },
+  "dependencies": {
+    "@circle-fin/developer-controlled-wallets": "^8.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0",
+    "@types/node": "^24.0.0"
+  }
+}

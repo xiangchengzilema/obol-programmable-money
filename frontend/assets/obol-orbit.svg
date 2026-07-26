@@ -1,0 +1,39 @@
+<svg width="760" height="760" viewBox="0 0 760 760" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="760" height="760" fill="none"/>
+  <g opacity=".92">
+    <circle cx="380" cy="380" r="232" stroke="#65D9F2" stroke-opacity=".18" stroke-width="1"/>
+    <circle cx="380" cy="380" r="176" stroke="#64E6BD" stroke-opacity=".24" stroke-width="1"/>
+    <circle cx="380" cy="380" r="96" stroke="#F0C969" stroke-opacity=".24" stroke-width="1"/>
+    <path d="M165 392C224 261 355 192 502 230C589 253 641 310 676 383" stroke="#64E6BD" stroke-opacity=".28" stroke-width="2" stroke-linecap="round" stroke-dasharray="8 12"/>
+    <path d="M116 472C217 576 374 608 511 535C589 493 638 431 660 354" stroke="#65D9F2" stroke-opacity=".22" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 14"/>
+  </g>
+  <g filter="url(#glow)">
+    <circle cx="380" cy="380" r="52" fill="#0B1215" stroke="#F0C969" stroke-opacity=".64" stroke-width="2"/>
+    <circle cx="380" cy="380" r="35" fill="url(#coin)" stroke="#2E210C" stroke-opacity=".5" stroke-width="3"/>
+    <path d="M366 362H386C398 362 406 370 406 381C406 393 397 401 384 401H365V392H383C390 392 395 388 395 382C395 375 390 371 383 371H366V362Z" fill="#2B1B08"/>
+    <path d="M365 362V401" stroke="#2B1B08" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <g>
+    <circle cx="544" cy="244" r="9" fill="#64E6BD"/>
+    <circle cx="189" cy="424" r="7" fill="#65D9F2"/>
+    <circle cx="585" cy="501" r="6" fill="#F0C969"/>
+    <circle cx="276" cy="202" r="5" fill="#F2F6F7" fill-opacity=".72"/>
+  </g>
+  <g opacity=".58" font-family="JetBrains Mono, monospace" font-size="13" letter-spacing="1">
+    <text x="514" y="224" fill="#64E6BD">AGENT READ</text>
+    <text x="104" y="407" fill="#65D9F2">USDC</text>
+    <text x="596" y="528" fill="#F0C969">TXHASH</text>
+  </g>
+  <defs>
+    <radialGradient id="coin" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(368 362) rotate(58) scale(77)">
+      <stop stop-color="#FFF0B4"/>
+      <stop offset=".48" stop-color="#F0C969"/>
+      <stop offset="1" stop-color="#8B6022"/>
+    </radialGradient>
+    <filter id="glow" x="296" y="296" width="168" height="168" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.941 0 0 0 0 0.788 0 0 0 0 0.412 0 0 0 .38 0"/>
+      <feBlend in="SourceGraphic"/>
+    </filter>
+  </defs>
+</svg>

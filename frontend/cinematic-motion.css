@@ -1,0 +1,729 @@
+/* Cinematic compact pass.
+   Goal: stop giant dashboard blocks, create a real motion-led settlement scene. */
+
+:root {
+  --cin-bg: #020713;
+  --cin-panel: rgba(8, 17, 29, .74);
+  --cin-panel-deep: rgba(3, 10, 18, .88);
+  --cin-line: rgba(155, 232, 255, .18);
+  --cin-line-hot: rgba(105, 250, 221, .52);
+  --cin-text: rgba(244, 250, 255, .93);
+  --cin-soft: rgba(211, 229, 239, .72);
+  --cin-muted: rgba(148, 170, 184, .62);
+  --cin-mint: #65ffd9;
+  --cin-cyan: #38d9ff;
+  --cin-violet: #8c7cff;
+  --cin-pink: #ff4fb4;
+  --cin-amber: #ffd263;
+  --cin-ease: cubic-bezier(.22, 1, .36, 1);
+  --cin-move: cubic-bezier(.25, 1, .5, 1);
+  --cin-display: "Bahnschrift", "Aptos Display", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --cin-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+}
+
+body {
+  background:
+    radial-gradient(circle at 4% 4%, rgba(255, 79, 180, .26), transparent 22%),
+    radial-gradient(circle at 86% 2%, rgba(56, 217, 255, .25), transparent 23%),
+    radial-gradient(circle at 64% 74%, rgba(101, 255, 217, .18), transparent 34%),
+    linear-gradient(145deg, #020713 0%, #07101d 48%, #031623 100%) !important;
+}
+
+body::before {
+  background:
+    linear-gradient(rgba(160, 232, 255, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(160, 232, 255, .055) 1px, transparent 1px),
+    radial-gradient(circle at 70% 30%, rgba(56, 217, 255, .06), transparent 35%) !important;
+  background-size: 44px 44px, 44px 44px, auto !important;
+  opacity: .30 !important;
+}
+
+body::after {
+  opacity: .075 !important;
+}
+
+main,
+.topbar {
+  width: min(1560px, calc(100% - 56px)) !important;
+}
+
+.topbar {
+  position: fixed !important;
+  min-height: 68px !important;
+  border-radius: 24px !important;
+  grid-template-columns: 250px minmax(540px, 1fr) max-content !important;
+  left: 28px !important;
+  right: auto !important;
+  width: calc(100% - 56px) !important;
+  transform: none !important;
+  opacity: 1 !important;
+  box-shadow:
+    0 20px 70px rgba(0, 0, 0, .36),
+    inset 0 1px 0 rgba(255, 255, 255, .14) !important;
+}
+
+.brand .coinmark,
+.coinmark {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 16px !important;
+}
+
+.brand strong {
+  font-size: 25px !important;
+}
+
+.nav {
+  height: 50px !important;
+}
+
+.navbtn {
+  min-height: 38px !important;
+  border-radius: 12px !important;
+  font-size: 14px !important;
+}
+
+.system-state .pill,
+.topbar-cta {
+  height: 46px !important;
+  min-height: 46px !important;
+}
+
+.view {
+  position: relative !important;
+  padding-top: 18px !important;
+}
+
+.view.active {
+  animation: view-materialize 520ms var(--cin-ease) both;
+}
+
+@keyframes view-materialize {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* Home: no more one huge boxed card. Make it an open settlement scene. */
+#view-home .hero-grid {
+  min-height: clamp(600px, calc(100dvh - 118px), 760px) !important;
+  padding: clamp(28px, 4vw, 54px) 0 30px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+#view-home .hero-grid::before {
+  inset: 3% 4% auto 24% !important;
+  width: min(820px, 58vw) !important;
+  height: min(820px, 58vw) !important;
+  border: 1px solid rgba(76, 222, 255, .18) !important;
+  border-radius: 50% !important;
+  background:
+    conic-gradient(from 120deg, transparent, rgba(56, 217, 255, .12), transparent 30%, rgba(101, 255, 217, .10), transparent 64%),
+    radial-gradient(circle, transparent 52%, rgba(56, 217, 255, .08) 53%, transparent 58%) !important;
+  box-shadow:
+    inset 0 0 60px rgba(56, 217, 255, .06),
+    0 0 120px rgba(101, 255, 217, .05) !important;
+  animation: orbital-drift 18s linear infinite !important;
+}
+
+#view-home .hero-grid::after {
+  top: 42% !important;
+  left: 29% !important;
+  width: 820px !important;
+  height: 2px !important;
+  color: transparent !important;
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(101,255,217,.12) 10%, rgba(56,217,255,.95) 44%, rgba(255,210,99,.72) 58%, transparent 100%) !important;
+  border-radius: 999px !important;
+  transform: rotate(-12deg) !important;
+  box-shadow: 0 0 38px rgba(56, 217, 255, .55) !important;
+  animation: rail-pulse 2.8s var(--cin-ease) infinite !important;
+}
+
+@keyframes orbital-drift {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes rail-pulse {
+  0%, 100% { opacity: .28; transform: rotate(-12deg) translateX(-24px) scaleX(.82); }
+  45% { opacity: 1; transform: rotate(-12deg) translateX(18px) scaleX(1.02); }
+}
+
+.hero-copy {
+  grid-column: 1 / 7 !important;
+  max-width: 700px !important;
+  padding-left: clamp(8px, 1.5vw, 20px) !important;
+}
+
+.hero-copy h1 {
+  max-width: 720px !important;
+  font-size: clamp(56px, 5.05vw, 90px) !important;
+  line-height: .92 !important;
+  letter-spacing: -.038em !important;
+}
+
+.hero-copy .lead {
+  max-width: 640px !important;
+  margin-top: 18px !important;
+  font-size: 17px !important;
+  line-height: 1.52 !important;
+}
+
+.problem-rail {
+  max-width: 650px !important;
+  grid-template-columns: 1fr 1fr 1fr !important;
+  gap: 10px !important;
+  margin-top: 20px !important;
+}
+
+.problem-rail div {
+  min-height: 78px !important;
+  padding: 14px 16px !important;
+  border-radius: 16px !important;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.018)),
+    rgba(5, 13, 22, .48) !important;
+}
+
+.problem-rail strong {
+  margin-top: 8px !important;
+  font-size: 15px !important;
+  line-height: 1.18 !important;
+}
+
+.hero-actions {
+  max-width: 610px !important;
+  grid-template-columns: 1.12fr 1fr 1fr !important;
+  gap: 10px !important;
+  margin-top: 22px !important;
+}
+
+.hero-actions button {
+  min-height: 50px !important;
+  border-radius: 15px !important;
+}
+
+.trust-rail {
+  max-width: 610px !important;
+  gap: 8px !important;
+}
+
+.trust-rail span {
+  min-height: 40px !important;
+  padding: 0 12px !important;
+  font-size: 13px !important;
+}
+
+#view-home .proof-card {
+  grid-column: 7 / 13 !important;
+  width: min(100%, 570px) !important;
+  justify-self: end !important;
+  padding: 16px !important;
+  border-radius: 28px !important;
+  transform: translateY(-10px) perspective(1200px) rotateX(0deg) rotateY(-3deg) !important;
+  transform-style: preserve-3d !important;
+  box-shadow:
+    0 32px 80px rgba(0,0,0,.46),
+    0 0 0 7px rgba(255,255,255,.035),
+    36px 26px 120px rgba(56,217,255,.14),
+    inset 0 1px 0 rgba(255,255,255,.14) !important;
+}
+
+#view-home .proof-card:hover {
+  transform: translateY(-14px) perspective(1200px) rotateX(1.5deg) rotateY(-1deg) !important;
+}
+
+.proof-card .amount {
+  font-size: clamp(44px, 4vw, 62px) !important;
+}
+
+.proof-route div {
+  min-height: 68px !important;
+  padding: 12px !important;
+}
+
+.proof-route strong {
+  font-size: 15px !important;
+}
+
+.tx-row {
+  min-height: 52px !important;
+}
+
+.agent-trace-mini p {
+  min-height: 50px !important;
+}
+
+.compact-stats {
+  grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  margin-top: 8px !important;
+}
+
+.stat {
+  min-height: 86px !important;
+  padding: 16px !important;
+  border-radius: 18px !important;
+  background:
+    radial-gradient(circle at var(--mx, 50%) var(--my, 0%), rgba(101,255,217,.16), transparent 36%),
+    linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.015)),
+    rgba(7, 16, 28, .58) !important;
+}
+
+.stat .num {
+  font-size: clamp(24px, 2.2vw, 34px) !important;
+}
+
+.stat .lbl {
+  font-size: 10px !important;
+  margin-top: 5px !important;
+}
+
+.stat::after,
+.command-deck article::after,
+.proof-metrics article::after {
+  left: 16px !important;
+  right: 16px !important;
+  bottom: 10px !important;
+  height: 2px !important;
+}
+
+.command-deck,
+.proof-grid,
+.demo-director {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  margin-top: 14px !important;
+}
+
+.command-deck article,
+.proof-grid article,
+.demo-director article {
+  min-height: 116px !important;
+  padding: 18px !important;
+  border-radius: 18px !important;
+}
+
+.command-deck strong,
+.demo-director strong,
+.proof-grid h3 {
+  font-size: 22px !important;
+  line-height: 1.04 !important;
+}
+
+.command-deck p,
+.demo-director p,
+.proof-grid p {
+  font-size: 13px !important;
+  line-height: 1.35 !important;
+}
+
+/* All secondary pages become compact product surfaces instead of huge cards. */
+.view-head {
+  min-height: 128px !important;
+  padding: 30px 0 18px !important;
+}
+
+.view-head h2 {
+  font-size: clamp(46px, 4.6vw, 76px) !important;
+  line-height: .94 !important;
+}
+
+.view-head p:not(.eyebrow) {
+  max-width: 720px !important;
+  font-size: 16px !important;
+  line-height: 1.45 !important;
+}
+
+.console-layout {
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) !important;
+  gap: 16px !important;
+}
+
+.run-panel,
+.result-stage,
+.panel,
+.settlement-panel,
+.evaluation-lab {
+  padding: 18px !important;
+  border-radius: 20px !important;
+}
+
+.chain-lens {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.chain-lens article,
+.scan-lane article,
+.metric-row article,
+.result-proof-grid article,
+.creator-proof-lens article,
+.settlement-grid div {
+  min-height: auto !important;
+  padding: 14px !important;
+  border-radius: 15px !important;
+}
+
+.agent-market-scan,
+.plan-card,
+.coverage-card {
+  border-radius: 18px !important;
+}
+
+.scan-lane {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.scan-card {
+  min-height: 128px !important;
+}
+
+.market-grid {
+  grid-template-columns: repeat(auto-fill, minmax(245px, 1fr)) !important;
+  gap: 14px !important;
+}
+
+.article {
+  min-height: 270px !important;
+  padding: 18px !important;
+  border-radius: 20px !important;
+  background:
+    radial-gradient(circle at var(--mx, 50%) var(--my, 0%), rgba(56,217,255,.18), transparent 34%),
+    linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.018)),
+    rgba(7, 16, 28, .62) !important;
+}
+
+.article h3 {
+  font-size: 20px !important;
+  line-height: 1.08 !important;
+}
+
+.article .preview {
+  font-size: 13px !important;
+  line-height: 1.42 !important;
+}
+
+.article .foot {
+  margin-top: 14px !important;
+}
+
+.creator-studio {
+  grid-template-columns: minmax(290px, 360px) minmax(0, 1fr) !important;
+  gap: 16px !important;
+}
+
+.create-form {
+  max-height: calc(100dvh - 180px) !important;
+  overflow: auto !important;
+}
+
+.creators-layout {
+  grid-template-columns: minmax(210px, 280px) minmax(0, 1fr) !important;
+  gap: 14px !important;
+}
+
+.creator-list li {
+  padding: 14px !important;
+  border-radius: 17px !important;
+}
+
+.creator-proof-lens {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.creator-payments {
+  max-height: 430px !important;
+  overflow: auto !important;
+}
+
+.x402-grid {
+  gap: 16px !important;
+}
+
+.codebox {
+  max-height: 260px !important;
+  overflow: auto !important;
+}
+
+.proof-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.proof-metrics article {
+  min-height: 104px !important;
+  padding: 16px !important;
+  border-radius: 18px !important;
+}
+
+.proof-metrics span {
+  font-size: clamp(26px, 2.8vw, 42px) !important;
+}
+
+.persona-strip,
+.eval-grid {
+  gap: 10px !important;
+}
+
+.persona-strip article,
+.evaluation-lab article {
+  min-height: 98px !important;
+  padding: 16px !important;
+  border-radius: 18px !important;
+}
+
+.traction-grid {
+  grid-template-columns: minmax(300px, 390px) minmax(0, 1fr) !important;
+  gap: 16px !important;
+}
+
+.ledger-table th,
+.ledger-table td {
+  padding: 13px 12px !important;
+  font-size: 13px !important;
+}
+
+/* Spotlight hover: JS writes --mx/--my per surface. */
+.motion-surface {
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.motion-surface::before {
+  content: "" !important;
+  position: absolute !important;
+  inset: -1px !important;
+  z-index: 0 !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  background:
+    radial-gradient(circle at var(--mx, 50%) var(--my, 50%), rgba(101,255,217,.28), transparent 28%),
+    radial-gradient(circle at var(--mx, 50%) var(--my, 50%), rgba(255,79,180,.16), transparent 44%) !important;
+  transition: opacity 180ms ease !important;
+}
+
+.motion-surface:hover::before {
+  opacity: 1 !important;
+}
+
+.motion-surface > * {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .article:hover,
+  .stat:hover,
+  .panel:hover,
+  .creator-list li:hover,
+  .command-deck article:hover,
+  .proof-grid article:hover,
+  .demo-director article:hover,
+  .proof-metrics article:hover {
+    transform: translateY(-5px) scale(1.01) !important;
+    border-color: rgba(105, 250, 221, .42) !important;
+    box-shadow:
+      0 24px 70px rgba(0,0,0,.30),
+      0 0 55px rgba(56, 217, 255, .10),
+      inset 0 1px 0 rgba(255,255,255,.16) !important;
+  }
+}
+
+.hero-copy > *,
+.proof-card,
+.stat,
+.command-deck article,
+.proof-grid article,
+.view-head,
+.console-layout,
+.market-grid .article,
+.creator-studio,
+.x402-grid,
+.traction-grid,
+.proof-metrics article,
+.persona-strip article {
+  opacity: 0;
+  transform: translateY(18px);
+}
+
+.motion-ready .view.active .hero-copy > *,
+.motion-ready .view.active .proof-card,
+.motion-ready .view.active .stat,
+.motion-ready .view.active .command-deck article,
+.motion-ready .view.active .proof-grid article,
+.motion-ready .view.active .view-head,
+.motion-ready .view.active .console-layout,
+.motion-ready .view.active .market-grid .article,
+.motion-ready .view.active .creator-studio,
+.motion-ready .view.active .x402-grid,
+.motion-ready .view.active .traction-grid,
+.motion-ready .view.active .proof-metrics article,
+.motion-ready .view.active .persona-strip article,
+.reveal-in {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 760ms var(--cin-ease),
+    transform 760ms var(--cin-ease),
+    filter 760ms var(--cin-ease) !important;
+}
+
+.motion-ready .view.active .hero-copy > *:nth-child(1) { transition-delay: 60ms !important; }
+.motion-ready .view.active .hero-copy > *:nth-child(2) { transition-delay: 130ms !important; }
+.motion-ready .view.active .hero-copy > *:nth-child(3) { transition-delay: 210ms !important; }
+.motion-ready .view.active .hero-copy > *:nth-child(4) { transition-delay: 290ms !important; }
+.motion-ready .view.active .hero-copy > *:nth-child(5) { transition-delay: 360ms !important; }
+.motion-ready .view.active .proof-card { transition-delay: 220ms !important; }
+.motion-ready .view.active .stat:nth-child(1) { transition-delay: 70ms !important; }
+.motion-ready .view.active .stat:nth-child(2) { transition-delay: 110ms !important; }
+.motion-ready .view.active .stat:nth-child(3) { transition-delay: 150ms !important; }
+.motion-ready .view.active .stat:nth-child(4) { transition-delay: 190ms !important; }
+.motion-ready .view.active .stat:nth-child(5) { transition-delay: 230ms !important; }
+.motion-ready .view.active .stat:nth-child(6) { transition-delay: 270ms !important; }
+.motion-ready .view.active .stat:nth-child(7) { transition-delay: 310ms !important; }
+
+.purchase-popover:not(.hidden),
+.unlock-modal:not(.hidden) .unlock-card {
+  animation: modal-snap-in 360ms var(--cin-ease) both !important;
+}
+
+@keyframes modal-snap-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(.94);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.motion-ready .topbar {
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.coverage-track span,
+.unlock-progress span {
+  box-shadow: 0 0 24px rgba(56, 217, 255, .34) !important;
+}
+
+.scan-card.is-active {
+  animation: scan-breath 1.4s var(--cin-ease) infinite alternate !important;
+}
+
+@keyframes scan-breath {
+  from {
+    border-color: rgba(255, 210, 99, .28);
+    transform: translateY(0);
+  }
+  to {
+    border-color: rgba(255, 210, 99, .82);
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+
+  .hero-copy > *,
+  .proof-card,
+  .stat,
+  .command-deck article,
+  .proof-grid article,
+  .view-head,
+  .console-layout,
+  .market-grid .article,
+  .creator-studio,
+  .x402-grid,
+  .traction-grid,
+  .proof-metrics article,
+  .persona-strip article {
+    opacity: 1 !important;
+  }
+}
+
+@media (max-width: 1280px) {
+  main,
+  .topbar {
+    width: min(100% - 32px, 1180px) !important;
+  }
+
+  .topbar {
+    left: 16px !important;
+    right: auto !important;
+    width: calc(100% - 32px) !important;
+    grid-template-columns: 1fr !important;
+  }
+
+  #view-home .hero-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .hero-copy,
+  #view-home .proof-card {
+    grid-column: 1 !important;
+    width: 100% !important;
+    justify-self: stretch !important;
+    transform: none !important;
+  }
+
+  .compact-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .market-grid {
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  main,
+  .topbar {
+    left: 10px !important;
+    right: auto !important;
+    width: calc(100% - 20px) !important;
+  }
+
+  .hero-copy h1,
+  .view-head h2 {
+    font-size: clamp(44px, 13vw, 62px) !important;
+  }
+
+  .problem-rail,
+  .hero-actions,
+  .trust-rail,
+  .proof-route,
+  .agent-trace-mini,
+  .compact-stats,
+  .command-deck,
+  .proof-grid,
+  .demo-director,
+  .chain-lens,
+  .scan-lane,
+  .proof-metrics {
+    grid-template-columns: 1fr !important;
+  }
+}
