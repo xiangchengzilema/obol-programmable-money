@@ -23,6 +23,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from db import init_db, get_db
 from circle_service import CircleService
 from wallet_pool import WalletPoolExhausted, pay_from_buyer_pool
+from spending_policy import PolicyValidationError
 import agent as agent_mod
 import x402 as x402_mod
 import llm
@@ -58,6 +59,14 @@ def err(msg, code=400):
     return jsonify({"error": msg}), code
 
 
+def _env_flag(name, default="0"):
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _public_demo():
+    return _env_flag("OBOL_PUBLIC_DEMO")
+
+
 def safe_err(prefix, exc, code=502):
     if isinstance(exc, WalletPoolExhausted):
         return err(f"{prefix}: {exc}", 409)
@@ -68,10 +77,35 @@ def safe_err(prefix, exc, code=502):
             "Obol will use the funded buyer-wallet pool when available; fund another buyer wallet or choose a lower-priced source.",
             409,
         )
-    msg = str(exc).replace(os.getenv("CIRCLE_API_KEY", ""), "[redacted]")
+    msg = str(exc)
+    for secret_name in ("CIRCLE_API_KEY", "CIRCLE_ENTITY_SECRET"):
+        secret = os.getenv(secret_name, "")
+        if secret:
+            msg = msg.replace(secret, "[redacted]")
     if len(msg) > 500:
         msg = msg[:500] + "..."
     return err(f"{prefix}: {msg}", code)
+
+
+@app.before_request
+def public_demo_guard():
+    """Keep the anonymous judge-facing service safe and repeatable.
+
+    The production WSGI entrypoint already forces mock settlement. This request
+    guard is a second fail-closed layer in case a host starts the app with a
+    different command or accidentally adds Circle credentials.
+    """
+    if request.method == "OPTIONS" or not _public_demo():
+        return None
+    if CircleService().mode != "mock":
+        return err(
+            "public demo is misconfigured: live settlement is not allowed",
+            503,
+        )
+    blocked_writes = {"/api/creators", "/api/articles", "/api/demo/reset"}
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.path in blocked_writes:
+        return err("this management action is disabled in the public demo", 403)
+    return None
 
 
 def _ensure_seeded():
@@ -90,6 +124,7 @@ def _ensure_seeded():
 def health():
     circle = CircleService()
     return jsonify({"status": "ok",
+                    "public_demo": _public_demo(),
                     "settlement_mode": circle.mode,   # mock | live
                     "settlement_ready": circle.readiness()["ready_for_live_transfers"],
                     "llm_mode": "openai" if llm.available() else "heuristic"})
@@ -110,6 +145,20 @@ def stats():
     data = {
         "total_paid_usdc": round(g("SELECT COALESCE(SUM(amount_usdc),0) FROM receipts"), 6),
         "total_reads": g("SELECT COUNT(*) FROM receipts"),
+        "live_paid_usdc": round(g(
+            "SELECT COALESCE(SUM(amount_usdc),0) FROM receipts "
+            "WHERE settlement_mode='live'"
+        ), 6),
+        "live_reads": g(
+            "SELECT COUNT(*) FROM receipts WHERE settlement_mode='live'"
+        ),
+        "demo_paid_usdc": round(g(
+            "SELECT COALESCE(SUM(amount_usdc),0) FROM receipts "
+            "WHERE settlement_mode!='live'"
+        ), 6),
+        "demo_reads": g(
+            "SELECT COUNT(*) FROM receipts WHERE settlement_mode!='live'"
+        ),
         "num_creators": g("SELECT COUNT(*) FROM creators"),
         "num_articles": g("SELECT COUNT(*) FROM articles"),
         "num_runs": g("SELECT COUNT(*) FROM agent_runs"),
@@ -308,8 +357,14 @@ def unlock_article(aid):
         )
     except Exception as e:
         return safe_err("settlement failed", e)
-    receipt = x402_mod.grant(art, buyer, tx["tx_hash"], source="unlock",
-                             transaction_id=tx.get("transaction_id", ""))
+    receipt = x402_mod.grant(
+        art,
+        buyer,
+        tx["tx_hash"],
+        source="unlock",
+        transaction_id=tx.get("transaction_id", ""),
+        settlement_mode=tx.get("mode", CircleService().mode),
+    )
     return jsonify({"article_id": aid, "title": art["title"], "creator_name": art["creator_name"],
                     "content": art["content"], "amount_paid_usdc": art["price_usdc"],
                     "payer_buyer_id": tx.get("payer_buyer_id", ""),
@@ -335,14 +390,35 @@ def x402_article(aid):
     if not row:
         return err("article not found", 404)
     art = dict(row)
+    circle = CircleService()
     proof = request.headers.get("X-Payment")
     if not proof:
-        return jsonify(x402_mod.build_challenge(art)), 402
+        challenge = x402_mod.build_challenge(art)
+        challenge["proofVerification"] = (
+            "demo-format-only" if circle.mode == "mock"
+            else "disabled-until-onchain-verification"
+        )
+        return jsonify(challenge), 402
+    if circle.mode == "live" and not _env_flag("OBOL_ALLOW_UNVERIFIED_X402_PROOFS"):
+        return err(
+            "live x402 proof verification is not configured; "
+            "refusing an unverified payment proof",
+            501,
+        )
     if not x402_mod.valid_proof(proof):
         return err("invalid X-Payment proof", 402)
     buyer = request.headers.get("X-Payer", "x402-agent")
     try:
-        receipt = x402_mod.grant(art, buyer, proof, source="x402")
+        if _public_demo():
+            receipt = x402_mod.demo_grant(art, buyer, proof)
+        else:
+            receipt = x402_mod.grant(
+                art,
+                buyer,
+                proof,
+                source="x402",
+                settlement_mode=circle.mode,
+            )
     except ValueError as e:
         return err(str(e), 402)
     return jsonify({"article_id": aid, "title": art["title"], "creator_name": art["creator_name"],
@@ -356,14 +432,29 @@ def agent_run():
     query = (d.get("query") or "").strip()
     if not query:
         return err("query required")
+    if len(query) > 1000:
+        return err("query must be at most 1000 characters")
     try:
         budget = float(d.get("budget_usdc", 0.05))
     except (ValueError, TypeError):
         return err("budget_usdc must be a number")
     if budget <= 0:
         return err("budget_usdc must be > 0")
+    if _public_demo():
+        try:
+            public_max_budget = float(
+                os.getenv("OBOL_PUBLIC_MAX_BUDGET_USDC", "0.25")
+            )
+        except (TypeError, ValueError):
+            public_max_budget = 0.25
+        if budget > public_max_budget:
+            return err(
+                f"public demo budget must be <= {public_max_budget:.3f} USDC"
+            )
     try:
-        run = agent_mod.run_agent(query, budget)
+        run = agent_mod.run_agent(query, budget, d.get("policy"))
+    except PolicyValidationError as e:
+        return err(str(e))
     except Exception as e:
         return safe_err("agent run failed", e)
     return jsonify(run), 201

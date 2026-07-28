@@ -3,7 +3,8 @@
 **Arc Programmable Money Hackathon · Agentic Economy track**
 
 Obol gives autonomous AI agents a USDC budget to buy creator content per read,
-settle through Circle Wallets on Arc, and produce a receipt for every decision.
+settle through Circle Wallets on Arc, and produce a receipt for every buy,
+reuse, skip, or stop decision.
 
 ## Competition iteration
 
@@ -27,12 +28,29 @@ an AI reads them.
 
 ### How it works
 1. **Creators** list an article and set a per-read price (e.g. $0.01).
-2. You ask the **agent** a question with a daily USDC budget.
+2. You ask the **agent** a question with a USDC budget and programmable
+   guardrails.
 3. The agent scores each article, **buys the ones worth paying for within budget,
-   skips the rest (with reasons)**, and pays each creator a nanopayment on Arc.
+   reuses prior purchases, skips the rest (with reasons), and stops when its
+   policy says enough evidence has been collected**.
 4. You get an answer with citations; creators see earnings tick up in real time.
 
-The agent's **buy/skip decision log** is the heart of it - real agency, not automation.
+The agent's **buy/reuse/skip/stop audit log** is the heart of it — real agency,
+not a scripted checkout.
+
+### Programmable spending policy
+
+Every run can carry its own deterministic USDC policy:
+
+- `reserve_usdc`: balance that must remain unspent
+- `max_price_usdc`: maximum price for one source
+- `min_relevance`: minimum usefulness score
+- `max_purchases`: maximum number of new paid reads
+- `coverage_target`: stop once the query is sufficiently covered
+
+Obol snapshots that policy with the run. Every decision records the stable rule
+that fired, its explanation, and the budget before and after the action. A final
+`stop` event explains why the agent ended the spending loop.
 
 ### How AI agents integrate
 
@@ -55,7 +73,7 @@ Minimal agent call:
 ```bash
 curl -X POST http://localhost:5001/api/agent/run \
   -H "Content-Type: application/json" \
-  -d "{\"query\":\"Arc testnet predictable fees for AI paid reads\",\"budget_usdc\":0.05}"
+  -d "{\"query\":\"Arc testnet predictable fees for AI paid reads\",\"budget_usdc\":0.05,\"policy\":{\"reserve_usdc\":0.005,\"max_price_usdc\":0.02,\"min_relevance\":0.35,\"max_purchases\":2}}"
 ```
 
 Minimal x402 flow:
@@ -100,14 +118,18 @@ as **demo/evaluation data**, not organic traction.
 
 Check readiness at `/api/settlement/status`; see `ARC_TESTNET_LIVE_CHECKLIST.md`.
 
-Deployment can use a single process:
+Deployment uses a single process:
 
 ```bash
-cd backend && python app.py
+gunicorn --chdir backend --workers 1 --threads 4 --timeout 120 \
+  --bind 0.0.0.0:$PORT wsgi:app
 ```
 
-The Flask app serves both `/api/*` and the static frontend. It reads `PORT` when
-set by a host such as Railway/Render, and auto-seeds demo data on first boot.
+The Flask app serves both `/api/*` and the static frontend. The public WSGI
+entrypoint is fail-closed: it defaults to mock settlement and disables reset so
+an anonymous judge-facing deployment cannot access Circle wallet credentials.
+Real Arc Testnet evidence is generated locally and shared only as non-secret
+transaction proof. See `DEPLOYMENT.md`.
 
 ### Demo flow
 Open `http://localhost:5001`, run the Agent Console, then visit Creator Studio
@@ -145,12 +167,16 @@ agent wallet and records receipts with `source=evaluation-agent`.
 ### Verify
 
 ```bash
-cd backend && python -m pytest test_obol.py -q
+cd backend && python -m pytest -q test_obol.py -p no:cacheprovider
 cd .. && node --check frontend/app.js
 ```
 
-See `PROGRAMMABLE_MONEY_SUBMISSION.md` for the current checkpoint and
-submission copy. The backend API routes live in `backend/app.py` and the
-machine-payment flow lives in `backend/x402.py`.
+Current result: **26 backend tests passing**, plus JavaScript syntax validation.
+
+See `PROGRAMMABLE_MONEY_SUBMISSION.md` for checkpoint copy,
+`FINAL_SUBMISSION_DRAFT.md` for the final form/video/deck source, and
+`ARC_ITERATION_CHANGELOG.md` for a transparent inherited-vs-new breakdown. The
+backend routes live in `backend/app.py`; the machine-payment flow lives in
+`backend/x402.py`.
 
 

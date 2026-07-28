@@ -3151,6 +3151,7 @@ table.decisions,
     "steps steps steps steps steps steps steps steps steps steps steps steps"
     "scan scan scan scan scan scan scan scan scan scan scan scan"
     "plan plan plan plan plan plan coverage coverage coverage coverage coverage coverage"
+    "policy policy policy policy policy policy policy policy policy policy policy policy"
     "summary summary summary summary summary summary summary summary summary summary summary summary"
     "proof proof proof proof proof proof proof proof proof proof proof proof" !important;
 }
@@ -3189,4 +3190,140 @@ table.decisions,
 
 .result-proof-grid {
   grid-area: proof !important;
+}
+
+/* V27: request-scoped programmable USDC guardrails and policy audit proof. */
+.dot.stop {
+  background: var(--agency-gold, #ffd45f) !important;
+}
+
+.badge.stop {
+  color: #211704 !important;
+  background: var(--agency-gold, #ffd45f) !important;
+}
+
+.policy-editor {
+  margin: 16px 0 !important;
+  padding: 14px !important;
+  border: 1px solid rgba(85, 226, 217, .22) !important;
+  border-radius: 14px !important;
+  background: rgba(85, 226, 217, .045) !important;
+}
+
+.policy-editor legend {
+  padding: 0 6px !important;
+  color: #f8fdff !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: .04em !important;
+  text-transform: uppercase !important;
+}
+
+.policy-editor > p {
+  margin: 0 0 12px !important;
+  color: rgba(202, 224, 235, .72) !important;
+  font-size: 12px !important;
+}
+
+.policy-input-grid {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 10px !important;
+}
+
+.policy-input-grid label {
+  color: rgba(202, 224, 235, .76) !important;
+  font-size: 11px !important;
+}
+
+.policy-input-grid input {
+  margin-top: 5px !important;
+}
+
+.policy-audit-card {
+  grid-area: policy !important;
+  min-width: 0 !important;
+  padding: 16px !important;
+  border: 1px solid rgba(85, 226, 217, .24) !important;
+  border-radius: 16px !important;
+  background:
+    linear-gradient(135deg, rgba(85, 226, 217, .08), rgba(228, 180, 71, .035)),
+    rgba(5, 13, 24, .7) !important;
+}
+
+.policy-audit-head {
+  display: flex !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  align-items: center !important;
+}
+
+.policy-audit-head strong {
+  color: var(--agency-mint, #68ffda) !important;
+  font-family: var(--agency-mono, monospace) !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+}
+
+.policy-audit-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  margin-top: 12px !important;
+}
+
+.policy-audit-grid article {
+  min-width: 0 !important;
+  padding: 10px !important;
+  border: 1px solid rgba(167, 205, 222, .13) !important;
+  border-radius: 10px !important;
+  background: rgba(0, 0, 0, .16) !important;
+}
+
+.policy-audit-grid span,
+.policy-audit-grid strong {
+  display: block !important;
+}
+
+.policy-audit-grid span {
+  color: rgba(202, 224, 235, .68) !important;
+  font-size: 10px !important;
+  text-transform: uppercase !important;
+}
+
+.policy-audit-grid strong {
+  margin-top: 4px !important;
+  color: #f8fdff !important;
+  font-family: var(--agency-mono, monospace) !important;
+  font-size: 13px !important;
+  overflow-wrap: anywhere !important;
+}
+
+.policy-stop-reason {
+  margin: 12px 0 0 !important;
+  color: rgba(226, 239, 245, .84) !important;
+  font-size: 12px !important;
+}
+
+.policy-rule {
+  display: block !important;
+  width: max-content !important;
+  margin-bottom: 5px !important;
+  color: var(--agency-mint, #68ffda) !important;
+  font-size: 10px !important;
+  letter-spacing: .04em !important;
+}
+
+.policy-stop-row {
+  background: rgba(228, 180, 71, .045) !important;
+}
+
+@media (max-width: 760px) {
+  .policy-input-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .policy-audit-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
 }

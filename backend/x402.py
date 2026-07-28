@@ -12,6 +12,7 @@ agents at it and complete an HTTP 402 challenge-and-retry flow.
 """
 import time
 import uuid
+import hashlib
 
 from db import get_db
 
@@ -43,7 +44,8 @@ def valid_proof(proof):
     return isinstance(proof, str) and proof.startswith("0x") and len(proof) >= 10
 
 
-def grant(article, buyer, tx_hash, source="x402", transaction_id=""):
+def grant(article, buyer, tx_hash, source="x402", transaction_id="",
+          settlement_mode="mock"):
     """Record an external purchase receipt and return it.
 
     The mock proof is a tx hash, so treat it as an idempotency key. Replaying the
@@ -61,12 +63,41 @@ def grant(article, buyer, tx_hash, source="x402", transaction_id=""):
             raise ValueError("payment proof already used for another resource")
         return receipt
     cur.execute("""INSERT INTO receipts(run_id, article_id, creator_id, amount_usdc,
-                   tx_hash, transaction_id, blockchain, source, buyer, created_at)
-                   VALUES(NULL,?,?,?,?,?,?,?,?,?)""",
+                   tx_hash, transaction_id, blockchain, settlement_mode,
+                   source, buyer, created_at)
+                   VALUES(NULL,?,?,?,?,?,?,?,?,?,?)""",
                 (article["id"], article["creator_id"], article["price_usdc"],
-                 tx_hash, transaction_id, "ARC-TESTNET", source, buyer, time.time()))
+                 tx_hash, transaction_id, "ARC-TESTNET", settlement_mode,
+                 source, buyer, time.time()))
     conn.commit()
     rid = cur.lastrowid
     receipt = dict(cur.execute("SELECT * FROM receipts WHERE id=?", (rid,)).fetchone())
     conn.close()
     return receipt
+
+
+def demo_grant(article, buyer, tx_hash):
+    """Return a clearly simulated, non-persistent receipt for public demos.
+
+    A format-shaped proof is useful for demonstrating the x402 retry flow, but
+    it must never inflate the formal payment ledger or be presented as an
+    on-chain Arc transfer.
+    """
+    digest = hashlib.sha256(
+        f"{article['id']}:{buyer}:{tx_hash}".encode("utf-8")
+    ).hexdigest()[:16]
+    return {
+        "id": f"demo-{digest}",
+        "run_id": None,
+        "article_id": article["id"],
+        "creator_id": article["creator_id"],
+        "amount_usdc": article["price_usdc"],
+        "tx_hash": tx_hash,
+        "transaction_id": "",
+        "blockchain": "SIMULATED-ARC-TESTNET",
+        "settlement_mode": "mock",
+        "source": "x402-demo",
+        "buyer": buyer,
+        "created_at": time.time(),
+        "persisted": False,
+    }

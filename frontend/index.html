@@ -62,8 +62,8 @@
           <span class="constellation-pulse pulse-b"></span>
           <span class="constellation-pulse pulse-c"></span>
         </div>
-        <aside class="telemetry-rail" aria-label="Live telemetry window">
-          <span>live monitor</span>
+        <aside class="telemetry-rail" aria-label="Settlement telemetry window">
+          <span>receipt monitor</span>
           <strong id="daemon-paid">-- paid reads</strong>
           <small id="daemon-state">checking runner</small>
         </aside>
@@ -75,12 +75,12 @@
             <span>Arc proves it.</span>
           </h1>
           <p class="lead">
-            Obol is a live settlement console for machine readers: the agent scores paid sources,
-            Circle moves USDC, creators receive revenue, and Arc returns the txHash.
+            Obol is a settlement console for machine readers: live mode moves USDC through Circle
+            on Arc; the hosted public demo uses clearly labelled simulated receipts.
           </p>
-          <div id="payment-bubble-stream" class="payment-bubble-stream" aria-label="Live creator payment notifications">
+          <div id="payment-bubble-stream" class="payment-bubble-stream" aria-label="Creator settlement notifications">
             <div class="payment-bubble-track">
-              <span class="payment-bubble is-loading">loading live creator payments...</span>
+              <span class="payment-bubble is-loading">loading settlement receipts...</span>
             </div>
           </div>
           <div class="problem-rail" aria-label="Problem and resolution">
@@ -108,47 +108,47 @@
             <span><b>03</b> Arc returns proof</span>
           </div>
         </div>
-        <aside class="proof-card" aria-label="Live transaction proof">
+        <aside class="proof-card" aria-label="Settlement receipt proof">
           <div class="proof-card-head">
-            <span class="eyebrow">Live proof</span>
+            <span class="eyebrow">Settlement proof</span>
             <span id="hero-proof-status" class="pill pill-muted">checking</span>
           </div>
           <div class="proof-main">
             <div>
               <div class="amount" id="hero-proof-amount">$0.010</div>
-              <p>paid to creators</p>
+              <p>receipt volume</p>
             </div>
             <strong id="hero-proof-title">Settlement portfolio</strong>
           </div>
           <div class="proof-route" aria-label="Payment route">
-            <div><span>Execution</span><strong>Circle</strong></div>
-            <div><span>Network</span><strong>Arc Testnet</strong></div>
+            <div><span>Execution</span><strong>mode-aware</strong></div>
+            <div><span>Network</span><strong>checked at runtime</strong></div>
             <div><span>Asset</span><strong>USDC</strong></div>
           </div>
           <div class="settlement-timeline" aria-label="Settlement lifecycle">
             <span class="done">Selected</span>
             <span class="done">Authorized</span>
             <span class="done">Submitted</span>
-            <span class="done">Confirmed</span>
+            <span class="done">Labelled</span>
           </div>
           <a class="tx-row" id="hero-proof-link" href="#" aria-label="Latest transaction hash">
-            <span>TxHash</span>
-            <code id="hero-proof-hash">waiting for Arc txHash</code>
+            <span>Proof id</span>
+            <code id="hero-proof-hash">waiting for receipt</code>
           </a>
-          <p class="proof-footnote">No platform operator marks this as paid. Circle executes the wallet action; Arc returns the settlement proof.</p>
+          <p class="proof-footnote">Live receipts require Circle execution and an Arc txHash. Public-demo receipts are marked simulated and never claimed as on-chain.</p>
           <div class="agent-trace-mini">
             <div class="trace-top">
               <strong>Agent proof trace</strong>
-              <span>live on Arc</span>
+              <span>mode-aware</span>
             </div>
             <p><b>01</b><span>Score source fit and price</span></p>
             <p><b>02</b><span>Buy the selected creator note</span></p>
-            <p><b>03</b><span>Settle through Circle on Arc Testnet</span></p>
+            <p><b>03</b><span>Settle live or emit a labelled demo receipt</span></p>
           </div>
-          <div class="terminal-feed" aria-label="Latest live receipts">
+          <div class="terminal-feed" aria-label="Latest settlement receipts">
             <div class="terminal-feed-head">
               <span></span><span></span><span></span>
-              <strong>live_receipts.stream</strong>
+              <strong>receipts.stream</strong>
             </div>
             <div id="hero-live-feed" class="terminal-feed-body">
               <p>waiting for ledger...</p>
@@ -163,7 +163,7 @@
         <article>
           <span>12h window</span>
           <strong id="deck-window">usage runner synced</strong>
-          <p>background buyers create real Arc receipts over time</p>
+          <p>live mode creates Arc receipts; public mode stays simulated</p>
         </article>
         <article>
           <span>market depth</span>
@@ -172,16 +172,16 @@
         </article>
         <article>
           <span>creator side</span>
-          <strong id="deck-creators">wallet payouts live</strong>
+          <strong id="deck-creators">settlement mode loading</strong>
           <p>each receipt points to a creator revenue wallet</p>
         </article>
       </section>
 
       <section class="live-proof" id="live-proof">
         <div>
-          <span class="section-label">Live Arc proof</span>
+          <span class="section-label">Settlement proof</span>
           <h3>Waiting for a completed receipt</h3>
-          <p>Run the paying agent to produce a Circle transaction and Arc Testnet tx hash.</p>
+          <p>Run the agent to produce a labelled live or simulated receipt.</p>
         </div>
         <span class="pill pill-muted">checking</span>
       </section>
@@ -236,7 +236,7 @@
           <p>Ask a question with a budget. Watch the agent buy only what it needs, preserve money when coverage is enough, and reuse cached reads for free.</p>
         </div>
         <div class="head-actions">
-          <button class="primary" id="quick-demo-btn">Replay latest live proof</button>
+          <button class="primary" id="quick-demo-btn">Replay latest receipt</button>
           <button class="secondary" id="reset-demo-btn" title="Reseed the local demo database">Reset demo data</button>
         </div>
       </div>
@@ -254,6 +254,24 @@
               <input value="USDC" disabled />
             </label>
           </div>
+          <fieldset class="policy-editor">
+            <legend>Programmable spend guard</legend>
+            <p>These rules are checked before every USDC transfer.</p>
+            <div class="policy-input-grid">
+              <label>Protected reserve
+                <input id="policy-reserve" type="number" step="0.001" min="0" value="0.005" />
+              </label>
+              <label>Max / source
+                <input id="policy-max-price" type="number" step="0.001" min="0" value="0.020" />
+              </label>
+              <label>Min relevance
+                <input id="policy-min-relevance" type="number" step="0.05" min="0" max="1" value="0.35" />
+              </label>
+              <label>Max paid reads
+                <input id="policy-max-purchases" type="number" step="1" min="0" value="2" />
+              </label>
+            </div>
+          </fieldset>
           <button id="run-btn" class="primary full">Run agent</button>
           <div class="examples">
             <span>Scenarios</span>
@@ -313,6 +331,14 @@
               <span class="section-label">Plan</span>
               <p id="r-plan"></p>
             </div>
+            <section class="policy-audit-card" aria-label="Programmable spending policy">
+              <div class="policy-audit-head">
+                <span class="section-label">Programmable spend guard</span>
+                <strong>Enforced before transfer</strong>
+              </div>
+              <div class="policy-audit-grid" id="r-policy"></div>
+              <p class="policy-stop-reason" id="r-stop-reason"></p>
+            </section>
             <div class="metric-row" id="r-summary"></div>
             <div class="coverage-card">
               <div>
@@ -338,13 +364,14 @@
               <span class="dot buy"></span>buy
               <span class="dot reuse"></span>reuse
               <span class="dot skip"></span>skip
+              <span class="dot stop"></span>stop
             </div>
           </div>
           <div class="table-wrap">
             <table class="decisions">
               <thead>
                 <tr>
-                  <th>Decision</th><th>Source</th><th>Creator</th><th>Relevance</th><th>Price</th><th>Reason</th>
+                  <th>Decision</th><th>Source</th><th>Creator</th><th>Relevance</th><th>Price</th><th>Rule &amp; reason</th>
                 </tr>
               </thead>
               <tbody id="r-decisions"></tbody>
@@ -498,11 +525,11 @@
         </article>
         <article>
           <span id="traction-receipts">0</span>
-          <p>live receipts</p>
+          <p>receipts</p>
         </article>
         <article>
           <span id="traction-paid">$0.0000</span>
-          <p>USDC paid</p>
+          <p>USDC receipt volume</p>
         </article>
         <article>
           <span id="traction-saved">$0.0000</span>

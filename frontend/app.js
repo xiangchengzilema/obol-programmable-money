@@ -94,12 +94,23 @@ function money(n, d = 4) {
   return `$${fmt(n, d)}`;
 }
 
+function isLiveReceipt(receipt) {
+  return receipt?.settlement_mode === "live"
+    && receipt?.blockchain === "ARC-TESTNET"
+    && Boolean(receipt?.tx_hash);
+}
+
+function receiptModeLabel(receipt) {
+  return isLiveReceipt(receipt) ? "live" : "simulated";
+}
+
 function ledgerSummary(ledger = []) {
-  const live = ledger.filter((r) => r.tx_hash && r.blockchain === "ARC-TESTNET");
+  const live = ledger.filter(isLiveReceipt);
+  const demo = ledger.filter((r) => !isLiveReceipt(r));
   const creators = new Set(live.map((r) => r.creator_name).filter(Boolean));
   const total = live.reduce((sum, r) => sum + Number(r.amount_usdc || 0), 0);
   const top = [...live].sort((a, b) => Number(b.amount_usdc || 0) - Number(a.amount_usdc || 0))[0] || null;
-  return { live, creators, total, top };
+  return { live, demo, creators, total, top };
 }
 
 function renderHeroFeed(ledger = []) {
@@ -109,12 +120,12 @@ function renderHeroFeed(ledger = []) {
   feed.innerHTML = rows.length ? rows.map((r) => `
     <p>
       <span>${esc(shortTime(r.created_at))}</span>
-      <b>${esc(r.source || "agent")}</b>
+      <b>${esc(r.source || "agent")} / ${receiptModeLabel(r)}</b>
       <strong>${money(r.amount_usdc, 3)}</strong>
       <em>${esc(r.creator_name)}</em>
       <code>${esc(shortHash(r.tx_hash))}</code>
     </p>
-  `).join("") : `<p>waiting for Arc receipts...</p>`;
+  `).join("") : `<p>waiting for settlement receipts...</p>`;
 }
 
 function renderPaymentBubbles(ledger = []) {
@@ -129,7 +140,7 @@ function renderPaymentBubbles(ledger = []) {
     shell.classList.remove("is-single-feed", "is-bubble-cluster");
     shell.innerHTML = `
       <div class="payment-bubble-track is-static">
-        <span class="payment-bubble is-loading">waiting for live creator payments...</span>
+        <span class="payment-bubble is-loading">waiting for settlement receipts...</span>
       </div>
     `;
     return;
@@ -154,11 +165,12 @@ function visiblePaymentBubbles(rows, start = 0) {
 }
 
 function paymentBubbleMarkup(r, index = 0) {
+  const live = isLiveReceipt(r);
   return `
     <span class="payment-bubble ${index % 3 === 0 ? "is-hot" : index % 3 === 1 ? "is-cyan" : "is-amber"}">
       <span class="bubble-dot" aria-hidden="true"></span>
       <strong>${esc(r.creator_name)}</strong>
-      <span>received</span>
+      <span>${live ? "received" : "demo receipt"}</span>
       <code>${money(r.amount_usdc, 3)} USDC</code>
     </span>
   `;
@@ -302,11 +314,11 @@ async function replayLatestLiveProof() {
   const resultStage = $("#run-result");
   if (btn) {
     btn.disabled = true;
-    btn.textContent = "Replaying live proof...";
+    btn.textContent = "Replaying receipt...";
   }
   if (runBtn) {
     runBtn.disabled = true;
-    runBtn.textContent = "Live proof replay...";
+    runBtn.textContent = "Receipt replay...";
   }
   $("#empty-run")?.classList.add("hidden");
   dashboard?.classList.remove("hidden");
@@ -317,15 +329,15 @@ async function replayLatestLiveProof() {
   renderRunSteps("running");
   renderChainLens();
   renderMarketScan("searching", null, query);
-  $("#r-plan").innerHTML = `<span class="loading">reading the latest Arc receipt, replaying the agent decision path...</span>`;
+  $("#r-plan").innerHTML = `<span class="loading">reading the latest settlement receipt and replaying the agent decision path...</span>`;
   $("#r-summary").innerHTML = "";
   $("#r-proof-grid").innerHTML = "";
   $("#r-decisions").innerHTML = "";
   $("#r-receipts").innerHTML = "";
   $("#r-answer").textContent = "";
   $("#r-confidence").textContent = "";
-  $("#coverage-title").textContent = "Live Proof Replay";
-  $("#coverage-note").textContent = "Scanning existing Arc receipts produced by background buyers.";
+  $("#coverage-title").textContent = "Settlement Receipt Replay";
+  $("#coverage-note").textContent = "Scanning existing receipts and preserving their live or simulated status.";
   setCoverageNow(0);
 
   const timers = [
@@ -337,22 +349,23 @@ async function replayLatestLiveProof() {
       renderRunSteps("settling");
       animateCoverage(72, 620);
       showPendingPurchasePopover(query, Number($("#b-input").value || 0.011));
-      $("#purchase-kicker").textContent = "Circle settlement located";
-      $("#purchase-proof").textContent = "matching a live Arc receipt from the ledger";
+      $("#purchase-kicker").textContent = "Settlement receipt located";
+      $("#purchase-proof").textContent = "matching a receipt from the auditable ledger";
     }, 720),
     setTimeout(() => {
       renderRunSteps("proving");
       animateCoverage(94, 580);
-      $("#purchase-kicker").textContent = "Arc proof loading";
-      $("#purchase-proof").textContent = "txHash found / preparing receipt view";
+      $("#purchase-kicker").textContent = "Receipt proof loading";
+      $("#purchase-proof").textContent = "proof id found / checking settlement mode";
     }, 1240),
   ];
 
   try {
     const ledger = latestLedger.length ? latestLedger : await api("/api/ledger");
     latestLedger = ledger;
-    const receipt = ledger.find((r) => r.tx_hash) || ledger[0];
-    if (!receipt) throw new Error("No live receipt available yet. Run the agent or usage simulator first.");
+    const receipt = ledger.find(isLiveReceipt) || ledger[0];
+    if (!receipt) throw new Error("No receipt available yet. Run the agent first.");
+    const liveSettlement = isLiveReceipt(receipt);
     const amount = Number(receipt.amount_usdc || 0.011);
     const budget = Math.max(0.011, amount + 0.002);
     const run = {
@@ -365,9 +378,13 @@ async function replayLatestLiveProof() {
       saved_usdc: 0,
       sources_used: 1,
       confidence: "high",
-      settlement_mode: "live",
-      plan: "Replay a real paid read: score paid sources, select the strongest match, then surface its Circle transaction and Arc Testnet txHash.",
-      answer: `The agent selected "${receipt.title}" because the source matched the query and had a live payment receipt. The creator received ${money(amount)} through Circle Wallets, and the Arc txHash is attached as proof.`,
+      settlement_mode: liveSettlement ? "live" : "mock",
+      plan: liveSettlement
+        ? "Replay a live paid read: score paid sources, select the strongest match, then surface its Circle transaction and Arc Testnet txHash."
+        : "Replay a simulated public-demo read: score paid sources, select the strongest match, then surface its non-chain demo receipt.",
+      answer: liveSettlement
+        ? `The agent selected "${receipt.title}" because the source matched the query and had a verified live payment receipt. The creator received ${money(amount)} through Circle Wallets, with the Arc txHash attached as proof.`
+        : `The agent selected "${receipt.title}" because the source matched the query. This public-demo run simulated a ${money(amount)} settlement; its receipt is explicitly marked mock and is not an on-chain payment.`,
       decisions: [
         {
           decision: "buy",
@@ -375,7 +392,9 @@ async function replayLatestLiveProof() {
           creator_name: receipt.creator_name,
           relevance: 1,
           price_usdc: amount,
-          reason: "latest live Arc receipt selected for a deterministic judge demo",
+          reason: liveSettlement
+            ? "latest live Arc receipt selected for a deterministic judge demo"
+            : "latest simulated receipt selected for a deterministic public demo",
         },
         {
           decision: "skip",
@@ -400,7 +419,8 @@ async function replayLatestLiveProof() {
         amount_usdc: amount,
         tx_hash: receipt.tx_hash,
         transaction_id: receipt.transaction_id,
-        blockchain: receipt.blockchain || "ARC-TESTNET",
+        blockchain: receipt.blockchain || (liveSettlement ? "ARC-TESTNET" : "SIMULATED-ARC-TESTNET"),
+        settlement_mode: liveSettlement ? "live" : "mock",
       }],
     };
     await new Promise((resolve) => setTimeout(resolve, 1850));
@@ -419,7 +439,7 @@ async function replayLatestLiveProof() {
     resultStage?.classList.remove("agent-running");
     if (btn) {
       btn.disabled = false;
-      btn.textContent = "Replay latest live proof";
+      btn.textContent = "Replay latest receipt";
     }
     if (runBtn) {
       runBtn.disabled = false;
@@ -478,21 +498,34 @@ async function loadLiveProof(stats = null) {
     latestLedger = ledger;
     renderHeroFeed(ledger);
     renderPaymentBubbles(ledger);
-    const { live, creators, total, top } = ledgerSummary(ledger);
-    const paidTotal = Number(stats?.total_paid_usdc ?? total);
-    const proof = live[0];
+    const { live, demo, creators, total, top } = ledgerSummary(ledger);
+    const liveMode = live.length > 0;
+    const active = liveMode ? live : demo;
+    const proof = active[0];
+    const activeCreators = liveMode
+      ? creators
+      : new Set(demo.map((r) => r.creator_name).filter(Boolean));
+    const demoTotal = demo.reduce(
+      (sum, receipt) => sum + Number(receipt.amount_usdc || 0),
+      0,
+    );
+    const paidTotal = Number(
+      liveMode
+        ? (stats?.live_paid_usdc ?? total)
+        : (stats?.demo_paid_usdc ?? demoTotal),
+    );
     if (!proof) {
       box.innerHTML = `
         <div>
-          <span class="section-label">Live Arc proof</span>
+          <span class="section-label">Settlement proof</span>
           <h3>Waiting for a completed receipt</h3>
-          <p>Run the paying agent to produce a Circle transaction and Arc Testnet tx hash.</p>
+          <p>Run the agent to produce a clearly labelled live or simulated receipt.</p>
         </div>
-        <span class="pill pill-muted">no tx yet</span>
+        <span class="pill pill-muted">no receipt yet</span>
       `;
       const heroStatus = $("#hero-proof-status");
       if (heroStatus) {
-        heroStatus.textContent = "no tx yet";
+        heroStatus.textContent = "no receipt yet";
         heroStatus.className = "pill pill-muted";
       }
       const demoAmount = $("#demo-director-amount");
@@ -503,12 +536,14 @@ async function loadLiveProof(stats = null) {
     }
     box.innerHTML = `
       <div>
-        <span class="section-label">Live Arc proof</span>
-        <h3>${money(paidTotal)} settled across ${creators.size} creators</h3>
-        <p>Latest: ${money(proof.amount_usdc)} to ${esc(proof.creator_name)} / Circle ${esc(shortHash(proof.transaction_id))}</p>
+        <span class="section-label">${liveMode ? "Live Arc proof" : "Demo receipt"}</span>
+        <h3>${money(paidTotal)} ${liveMode ? "settled" : "simulated"} across ${activeCreators.size} creators</h3>
+        <p>${liveMode
+          ? `Latest: ${money(proof.amount_usdc)} to ${esc(proof.creator_name)} / Circle ${esc(shortHash(proof.transaction_id))}`
+          : `Latest: ${money(proof.amount_usdc)} simulated for ${esc(proof.creator_name)} / not on-chain`}</p>
         <code>${esc(proof.tx_hash)}</code>
       </div>
-      <span class="pill pill-ok">Arc Testnet complete</span>
+      <span class="pill ${liveMode ? "pill-ok" : "pill-warn"}">${liveMode ? "Arc Testnet complete" : "simulated / not on-chain"}</span>
     `;
     const heroStatus = $("#hero-proof-status");
     const heroAmount = $("#hero-proof-amount");
@@ -516,13 +551,15 @@ async function loadLiveProof(stats = null) {
     const heroLink = $("#hero-proof-link");
     const heroHash = $("#hero-proof-hash");
     if (heroStatus) {
-      heroStatus.textContent = "confirmed";
-      heroStatus.className = "pill pill-ok";
+      heroStatus.textContent = liveMode ? "confirmed" : "simulated";
+      heroStatus.className = `pill ${liveMode ? "pill-ok" : "pill-warn"}`;
     }
     if (heroAmount) heroAmount.textContent = money(paidTotal);
     if (heroTitle) {
-      heroTitle.textContent = `${creators.size} creators / ${live.length} receipts`;
-      heroTitle.title = top ? `Largest single receipt: ${money(top.amount_usdc)} to ${top.creator_name}` : "";
+      heroTitle.textContent = `${activeCreators.size} creators / ${active.length} ${liveMode ? "live" : "demo"} receipts`;
+      heroTitle.title = liveMode && top
+        ? `Largest live receipt: ${money(top.amount_usdc)} to ${top.creator_name}`
+        : "Public-demo receipts are simulated and not on-chain.";
     }
     if (heroHash) heroHash.textContent = shortHash(proof.tx_hash);
     if (heroLink) heroLink.href = `#tx-${encodeURIComponent(proof.tx_hash)}`;
@@ -533,7 +570,11 @@ async function loadLiveProof(stats = null) {
     const deckMarket = $("#deck-market");
     const deckCreators = $("#deck-creators");
     if (deckMarket) deckMarket.textContent = `${Math.max(articles.length || 0, 100)} paid sources`;
-    if (deckCreators) deckCreators.textContent = `${creators.size} creator wallets paid`;
+    if (deckCreators) {
+      deckCreators.textContent = liveMode
+        ? `${activeCreators.size} creator wallets paid`
+        : `${activeCreators.size} creator payouts simulated`;
+    }
   } catch (_) {}
 }
 
@@ -639,8 +680,20 @@ function renderMarketScan(state = "idle", run = null, query = "") {
   ];
 
   if (receipt) {
-    setHead(`Purchased "${receipt.title}"`, "paid");
-    const txCard = scanCard("TX", "Arc receipt confirmed", `${money(receipt.amount_usdc)} moved through Circle Wallets.`, shortHash(receipt.tx_hash || receipt.transaction_id), "is-buy");
+    const live = isLiveReceipt(receipt);
+    setHead(
+      `${live ? "Purchased" : "Simulated purchase"} "${receipt.title}"`,
+      live ? "paid" : "demo",
+    );
+    const txCard = scanCard(
+      "TX",
+      live ? "Arc receipt confirmed" : "Demo receipt recorded",
+      live
+        ? `${money(receipt.amount_usdc)} moved through Circle Wallets.`
+        : `${money(receipt.amount_usdc)} simulated; no on-chain funds moved.`,
+      shortHash(receipt.tx_hash || receipt.transaction_id),
+      "is-buy",
+    );
     lane.innerHTML = [...cards.slice(0, 3), txCard].join("");
     return;
   } else if (run?.saved_usdc > 0) {
@@ -795,11 +848,14 @@ function updateUnlockModal(state, payload = {}) {
     setUnlockProgress(68);
   }
   if (state === "success") {
+    const live = isLiveReceipt(payload.receipt);
     modal.classList.remove("is-error");
-    $("#unlock-kicker").textContent = "Purchase complete";
+    $("#unlock-kicker").textContent = live ? "Purchase complete" : "Demo purchase complete";
     $("#unlock-title").textContent = payload.title || "Source unlocked";
-    $("#unlock-meta").textContent = `${payload.creator_name || "Creator"} received ${money(payload.amount_paid_usdc)}.`;
-    $("#unlock-proof-label").textContent = "Arc proof";
+    $("#unlock-meta").textContent = live
+      ? `${payload.creator_name || "Creator"} received ${money(payload.amount_paid_usdc)}.`
+      : `${money(payload.amount_paid_usdc)} was simulated for ${payload.creator_name || "Creator"}; no on-chain funds moved.`;
+    $("#unlock-proof-label").textContent = live ? "Arc proof" : "Demo receipt";
     $("#unlock-proof").textContent = payload.receipt?.tx_hash || payload.receipt?.transaction_id || "receipt recorded";
     setUnlockStep("proof");
     $("#unlock-step-submit").className = "done";
@@ -829,12 +885,15 @@ function showPurchasePopover(run) {
   const bought = (run.decisions || []).find((d) => d.decision === "buy");
   const selected = receipt || bought || reused;
   if (receipt) {
+    const live = isLiveReceipt(receipt);
     updatePurchasePopover(
-      "Purchase complete",
+      live ? "Purchase complete" : "Demo purchase complete",
       receipt.title || "Source purchased",
-      `${receipt.creator_name} received ${money(receipt.amount_usdc)} on Arc Testnet`,
+      live
+        ? `${receipt.creator_name} received ${money(receipt.amount_usdc)} on Arc Testnet`
+        : `${money(receipt.amount_usdc)} was simulated for ${receipt.creator_name}; no on-chain funds moved`,
       receipt.tx_hash || receipt.transaction_id || "receipt recorded",
-      "Arc txHash",
+      live ? "Arc txHash" : "Demo receipt",
     );
     schedulePurchasePopoverHide(3800);
     return;
@@ -916,7 +975,12 @@ function renderChainLens(run = null) {
     set("#lens-decision", "No source met the bar");
   }
   if (receipt) {
-    set("#lens-execution", `${money(receipt.amount_usdc)} moved by Circle`);
+    set(
+      "#lens-execution",
+      isLiveReceipt(receipt)
+        ? `${money(receipt.amount_usdc)} moved by Circle`
+        : `${money(receipt.amount_usdc)} simulated in demo mode`,
+    );
     set("#lens-receipt", shortHash(receipt.tx_hash || receipt.transaction_id));
   } else if (reused) {
     set("#lens-execution", `${money(run.saved_usdc)} saved by cache reuse`);
@@ -931,6 +995,12 @@ async function runAgent() {
   const query = $("#q-input").value.trim();
   const budget = Number($("#b-input").value);
   if (!query || !budget || budget <= 0) return;
+  const policy = {
+    reserve_usdc: Number($("#policy-reserve").value),
+    max_price_usdc: Number($("#policy-max-price").value),
+    min_relevance: Number($("#policy-min-relevance").value),
+    max_purchases: Number($("#policy-max-purchases").value),
+  };
 
   const btn = $("#run-btn");
   const resultStage = $("#run-result");
@@ -986,6 +1056,8 @@ async function runAgent() {
   $("#r-plan").innerHTML = `<span class="loading">scoring sources, checking budget, and deciding what to buy...</span>`;
   $("#r-summary").innerHTML = "";
   $("#r-proof-grid").innerHTML = "";
+  $("#r-policy").innerHTML = "";
+  $("#r-stop-reason").textContent = "Policy engine is evaluating candidates.";
   $("#coverage-title").textContent = "Query Coverage";
   $("#coverage-note").textContent = "Scoring source relevance and budget fit.";
   $("#coverage-label").textContent = "0%";
@@ -999,7 +1071,7 @@ async function runAgent() {
     const run = await api("/api/agent/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, budget_usdc: budget }),
+      body: JSON.stringify({ query, budget_usdc: budget, policy }),
     });
     renderRun(run);
     renderRunSteps("done");
@@ -1031,12 +1103,35 @@ async function runAgent() {
 function renderRun(run) {
   const coverage = Math.round((run.coverage || 0) * 100);
   const firstReceipt = (run.receipts || [])[0];
+  const liveSettlement = isLiveReceipt(firstReceipt);
   const hasReusableSource = (run.decisions || []).some((d) => d.decision === "reuse");
   renderChainLens(run);
   $("#r-plan").textContent = run.plan || "";
+  const policy = run.policy || {};
+  const maxPrice = policy.max_price_usdc == null
+    ? "budget only"
+    : money(policy.max_price_usdc, 3);
+  const maxPurchases = policy.max_purchases == null
+    ? "unlimited"
+    : policy.max_purchases;
+  $("#r-policy").innerHTML = [
+    ["Spendable", money(policy.spendable_budget_usdc ?? run.budget_usdc)],
+    ["Protected", money(policy.reserve_usdc ?? 0)],
+    ["Max / source", maxPrice],
+    ["Min relevance", fmt(policy.min_relevance ?? 0.35, 2)],
+    ["Max paid reads", maxPurchases],
+  ].map(([label, value]) => `
+    <article>
+      <span>${esc(label)}</span>
+      <strong>${esc(value)}</strong>
+    </article>
+  `).join("");
+  $("#r-stop-reason").textContent = run.stop_reason || "Run completed under policy.";
   if (firstReceipt) {
     $("#coverage-title").textContent = "Settlement Progress";
-    $("#coverage-note").textContent = `Answer coverage: ${coverage}%. Payment proof is complete.`;
+    $("#coverage-note").textContent = liveSettlement
+      ? `Answer coverage: ${coverage}%. Live Arc payment proof is complete.`
+      : `Answer coverage: ${coverage}%. Simulated demo receipt is complete; no on-chain payment occurred.`;
     animateCoverage(100, 1600);
   } else if (hasReusableSource) {
     $("#coverage-title").textContent = "Receipt Reuse";
@@ -1062,15 +1157,19 @@ function renderRun(run) {
 
   const decisionLabel = firstReceipt ? "Read approved" : "No paid read needed";
   const settlementLabel = firstReceipt
-    ? `${money(firstReceipt.amount_usdc)} paid through Circle Wallets`
+    ? liveSettlement
+      ? `${money(firstReceipt.amount_usdc)} paid through Circle Wallets`
+      : `${money(firstReceipt.amount_usdc)} simulated in demo mode`
     : `${money(run.saved_usdc)} preserved by reuse`;
   const proofLabel = firstReceipt
     ? shortHash(firstReceipt.tx_hash || firstReceipt.transaction_id)
     : "cache proof";
   $("#r-proof-grid").innerHTML = [
     ["Decision", decisionLabel, "best priced source"],
-    ["Settlement", settlementLabel, "Circle Wallets / Arc"],
-    ["Proof", proofLabel, firstReceipt ? "Arc txHash confirmed" : "No new transfer required"],
+    ["Settlement", settlementLabel, liveSettlement ? "Circle Wallets / Arc" : "Mock engine / no funds moved"],
+    ["Proof", proofLabel, firstReceipt
+      ? (liveSettlement ? "Arc txHash confirmed" : "Simulated receipt / not on-chain")
+      : "No new transfer required"],
   ].map(([label, main, detail]) => `
     <article class="result-proof">
       <span>${esc(label)}</span>
@@ -1082,6 +1181,7 @@ function renderRun(run) {
   const decisions = run.decisions || [];
   const visibleDecisions = decisions.slice(0, 8);
   const hiddenDecisionCount = Math.max(0, decisions.length - visibleDecisions.length);
+  const stopEvent = (run.audit_log || []).filter((event) => event.event === "stop").slice(-1)[0];
   $("#r-decisions").innerHTML = visibleDecisions.map((d) => `
     <tr>
       <td><span class="badge ${esc(d.decision)}">${esc(d.decision)}</span></td>
@@ -1089,12 +1189,21 @@ function renderRun(run) {
       <td class="muted">${esc(d.creator_name)}</td>
       <td class="rel-cell">${fmt(d.relevance, 2)}</td>
       <td class="price-cell">${money(d.price_usdc, 3)}</td>
-      <td class="reason-cell">${esc(d.reason)}</td>
+      <td class="reason-cell"><code class="policy-rule">${esc(d.policy_rule || "legacy_decision")}</code>${esc(d.reason)}</td>
     </tr>
   `).join("") + (hiddenDecisionCount ? `
     <tr class="decision-summary-row">
       <td><span class="badge reuse">scan</span></td>
       <td colspan="5">${hiddenDecisionCount} additional sources were scored and collapsed after the agent found enough proof coverage.</td>
+    </tr>
+  ` : "") + (stopEvent ? `
+    <tr class="policy-stop-row">
+      <td><span class="badge stop">stop</span></td>
+      <td>Policy engine</td>
+      <td class="muted">—</td>
+      <td class="rel-cell">—</td>
+      <td class="price-cell">${money(0, 3)}</td>
+      <td class="reason-cell"><code class="policy-rule">${esc(stopEvent.rule)}</code>${esc(stopEvent.reason)}</td>
     </tr>
   ` : "");
 
@@ -1108,7 +1217,7 @@ function renderRun(run) {
       <article class="receipt">
         <span class="amt">${money(r.amount_usdc)}</span>
         <span class="to">${esc(r.creator_name)} / ${esc(r.title)}</span>
-        <span class="tx">${esc(r.blockchain)} ${esc(shortHash(r.tx_hash || r.transaction_id))}</span>
+        <span class="tx">${esc(isLiveReceipt(r) ? r.blockchain : "SIMULATED / NOT ON-CHAIN")} ${esc(shortHash(r.tx_hash || r.transaction_id))}</span>
       </article>
     `).join("")
     : `<p class="muted">No new payment was needed. The agent either reused cached reads or bought nothing.</p>`;
@@ -1121,25 +1230,26 @@ function renderReceiptDrawer(row) {
   const title = $("#drawer-title");
   const body = $("#drawer-body");
   if (!drawer || !title || !body || !row) return;
+  const live = isLiveReceipt(row);
   title.textContent = publicReceiptTitle(row.title || "Payment receipt", row.creator_name);
   body.innerHTML = `
     <div class="drawer-amount">
       <span>${money(row.amount_usdc)}</span>
-      <small>${esc(row.tx_hash ? "confirmed on Arc Testnet" : "recorded locally")}</small>
+      <small>${esc(live ? "confirmed on Arc Testnet" : "simulated demo receipt / not on-chain")}</small>
     </div>
     <div class="receipt-detail-grid">
       <div><span>Creator</span><strong>${esc(row.creator_name)}</strong></div>
       <div><span>Source</span><strong>${esc(row.source || "agent")}</strong></div>
-      <div><span>Network</span><strong>${esc(row.blockchain || "ARC-TESTNET")}</strong></div>
+      <div><span>Network</span><strong>${esc(live ? row.blockchain : "SIMULATED / NOT ON-CHAIN")}</strong></div>
       <div><span>Time</span><strong>${esc(shortTime(row.created_at))}</strong></div>
     </div>
     <div class="drawer-proof">
-      <span>TxHash</span>
+      <span>${live ? "TxHash" : "Demo proof id"}</span>
       <code>${esc(row.tx_hash || "pending")}</code>
     </div>
     <div class="drawer-proof">
-      <span>Circle transaction</span>
-      <code>${esc(row.transaction_id || "not available")}</code>
+      <span>${live ? "Circle transaction" : "Settlement mode"}</span>
+      <code>${esc(live ? (row.transaction_id || "not available") : "mock / no funds moved")}</code>
     </div>
   `;
   drawer.classList.remove("hidden");
@@ -1282,8 +1392,11 @@ async function unlockArticle(articleId) {
     });
     if (waitingTimer) clearTimeout(waitingTimer);
     updateUnlockModal("success", res);
+    const live = isLiveReceipt(res.receipt);
     if (status) {
-      status.textContent = `Unlocked. ${res.creator_name} received ${money(res.amount_paid_usdc)}.`;
+      status.textContent = live
+        ? `Unlocked. ${res.creator_name} received ${money(res.amount_paid_usdc)}.`
+        : `Unlocked in demo mode. ${money(res.amount_paid_usdc)} was simulated; no funds moved.`;
       status.className = "article-status is-ok";
     }
     renderReceiptDrawer({
@@ -1293,6 +1406,7 @@ async function unlockArticle(articleId) {
       tx_hash: res.receipt?.tx_hash,
       transaction_id: res.receipt?.transaction_id,
       blockchain: res.receipt?.blockchain || "ARC-TESTNET",
+      settlement_mode: res.receipt?.settlement_mode || "mock",
       source: "human unlock",
       created_at: Math.floor(Date.now() / 1000),
     });
@@ -1358,7 +1472,7 @@ async function selectCreator(cid) {
         <article>
           <span>Total earned</span>
           <strong>${money(d.total_earned_usdc)}</strong>
-          <p>USDC from paid reads</p>
+          <p>${d.payments.some(isLiveReceipt) ? "Includes live USDC paid reads" : "Simulated demo receipts"}</p>
         </article>
         <article>
           <span>Latest paid source</span>
@@ -1368,7 +1482,9 @@ async function selectCreator(cid) {
         <article>
           <span>Latest proof</span>
           <strong>${latest ? esc(shortHash(latest.tx_hash || latest.transaction_id)) : "no tx yet"}</strong>
-          <p>${latest ? esc(latest.blockchain || "ARC-TESTNET") : "Arc Testnet"}</p>
+          <p>${latest
+            ? esc(isLiveReceipt(latest) ? (latest.blockchain || "ARC-TESTNET") : "SIMULATED / NOT ON-CHAIN")
+            : "waiting for receipt"}</p>
         </article>
       </section>
       <div class="creator-payments">
@@ -1379,6 +1495,7 @@ async function selectCreator(cid) {
               <strong>${esc(publicReceiptTitle(p.title, d.creator.name))}</strong>
               <span>
                 <em>${esc(p.source || "agent")}</em>
+                <em>${receiptModeLabel(p)}</em>
                 ${p.tx_hash ? `<code>${esc(shortHash(p.tx_hash))}</code>` : ""}
               </span>
             </div>
@@ -1501,7 +1618,7 @@ async function loadTraction() {
               <td>${esc(r.creator_name)}</td>
               <td>${esc(publicReceiptTitle(r.title, r.creator_name))}</td>
               <td class="amount-cell">${money(r.amount_usdc)}</td>
-              <td><span class="status-pill">${r.tx_hash ? "confirmed" : "recorded"}</span></td>
+              <td><span class="status-pill">${isLiveReceipt(r) ? "live confirmed" : "simulated"}</span></td>
               <td class="hash-cell">${esc(shortHash(r.tx_hash || r.transaction_id))}</td>
               <td><button class="mini-action view-proof" type="button">View</button></td>
             </tr>
@@ -1703,6 +1820,12 @@ async function replayRunForRecording(runId, mode = "success") {
   showView("console");
   $("#q-input").value = run.query;
   $("#b-input").value = run.budget_usdc;
+  if (run.policy) {
+    $("#policy-reserve").value = run.policy.reserve_usdc ?? 0;
+    $("#policy-max-price").value = run.policy.max_price_usdc ?? run.budget_usdc;
+    $("#policy-min-relevance").value = run.policy.min_relevance ?? 0.35;
+    $("#policy-max-purchases").value = run.policy.max_purchases ?? 99;
+  }
   $("#empty-run").classList.add("hidden");
   $("#run-dashboard").classList.remove("hidden");
   $("#decision-section").classList.remove("hidden");

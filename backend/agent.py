@@ -23,6 +23,7 @@ the *least* it needs — it stops when the question is covered and leaves money 
 the table, and it refuses to pay twice for the same information. That visible,
 reasoned buy/skip/reuse log is the 30% "Agentic Sophistication" criterion.
 """
+import json
 import os
 import re
 import time
@@ -30,6 +31,7 @@ import time
 from db import get_db
 from circle_service import CircleService
 from wallet_pool import pay_from_buyer_pool
+from spending_policy import SpendingPolicy
 import llm
 
 # An article must clear this relevance to be worth paying for at all.
@@ -70,7 +72,7 @@ def _heuristic_relevance(query, article):
     return score / (len(q) * 3.0)  # normalized so a full title match ~= 1.0
 
 
-def _score_candidates(query, articles):
+def _score_candidates(query, articles, min_relevance=MIN_RELEVANCE):
     """Return {article_id: (relevance, reason)}. Tries LLM, falls back to heuristic."""
     if llm.available() and articles:
         catalog = "\n".join(
@@ -102,21 +104,22 @@ def _score_candidates(query, articles):
     scored = {}
     for a in articles:
         rel = (raw[a["id"]] / top) if top > 0 else 0.0
-        reason = ("keyword overlap with the query" if rel >= MIN_RELEVANCE
+        reason = ("keyword overlap with the query" if rel >= min_relevance
                   else "little keyword overlap with the query")
         scored[a["id"]] = (round(rel, 3), reason)
     return scored
 
 
-def _build_plan(query, articles, budget_usdc):
+def _build_plan(query, articles, policy):
     """A short, human-readable statement of intent shown before the agent acts."""
     cheapest = min((a["price_usdc"] for a in articles), default=0.0)
     return (
-        f'Goal: answer "{query}" for at most ${budget_usdc:.3f}. '
+        f'Goal: answer "{query}" under a programmable USDC budget policy. '
         f"{len(articles)} paywalled sources available (from ${cheapest:.3f}). "
         f"Strategy: rank by relevance-per-dollar, buy the best until the question is "
-        f"~{COVERAGE_TARGET:.0%} covered or the budget runs out, reuse anything already "
-        f"paid for, and skip sources that are low-relevance, redundant, or unaffordable."
+        f"~{policy.coverage_target:.0%} covered or a spending guard fires, reuse anything "
+        f"already paid for, and explain every buy, reuse, skip, and stop. "
+        f"Policy: {policy.describe()}"
     )
 
 
@@ -161,9 +164,14 @@ def _synthesize(query, bought, coverage):
     return "\n".join(lines)
 
 
-def run_agent(query, budget_usdc):
+def _purchase_limit(policy):
+    return policy.max_purchases if policy.max_purchases is not None else "unlimited"
+
+
+def run_agent(query, budget_usdc, policy_input=None):
     """Execute one agent run end-to-end. Returns the full run dict."""
-    budget_usdc = float(budget_usdc)
+    policy = SpendingPolicy.from_input(budget_usdc, policy_input)
+    budget_usdc = policy.total_budget_usdc
     q_terms = _query_terms(query)
     now = time.time()
     circle = CircleService()
@@ -173,14 +181,17 @@ def run_agent(query, budget_usdc):
     cur.execute("""SELECT a.*, c.name AS creator_name, c.payout_address
                    FROM articles a JOIN creators c ON c.id = a.creator_id""")
     articles = [dict(r) for r in cur.fetchall()]
-    plan = _build_plan(query, articles, budget_usdc)
+    plan = _build_plan(query, articles, policy)
 
-    cur.execute("INSERT INTO agent_runs(query, budget_usdc, status, plan, created_at) VALUES(?,?,?,?,?)",
-                (query, budget_usdc, "running", plan, now))
+    cur.execute("""INSERT INTO agent_runs(
+                   query, budget_usdc, status, plan, policy_json, created_at
+                   ) VALUES(?,?,?,?,?,?)""",
+                (query, budget_usdc, "running", plan,
+                 json.dumps(policy.to_dict(), sort_keys=True), now))
     run_id = cur.lastrowid
     conn.commit()
 
-    scored = _score_candidates(query, articles)
+    scored = _score_candidates(query, articles, policy.min_relevance)
 
     # rank by value-for-money = relevance / price (free/zero-priced sort first)
     for a in articles:
@@ -197,30 +208,72 @@ def run_agent(query, budget_usdc):
     spent = 0.0
     bought = []
     covered = set()
+    purchase_count = 0
     for a in articles:
         aspects = _article_aspects(a, q_terms)
         coverage = _coverage(covered, q_terms, bool(bought))
         novelty = aspects - covered
+        budget_before = round(budget_usdc - spent, 6)
+        budget_after = budget_before
 
-        if a["relevance"] < MIN_RELEVANCE:
+        if a["relevance"] < policy.min_relevance:
             decision = "skip"
-            reason = f"relevance {a['relevance']:.2f} below the {MIN_RELEVANCE:.2f} bar — not worth paying"
+            policy_rule = "min_relevance"
+            reason = (
+                f"relevance {a['relevance']:.2f} is below the programmable "
+                f"{policy.min_relevance:.2f} minimum; budget remains ${budget_before:.3f}"
+            )
         elif a["id"] in paid_ids:
             decision = "reuse"
-            reason = "already paid for in a prior run — read from cache for $0.00"
+            policy_rule = "cache_reuse"
+            reason = (
+                "prior agent receipt authorizes cache reuse for $0.00; "
+                f"purchase count stays {purchase_count}/{_purchase_limit(policy)} "
+                f"and budget stays ${budget_before:.3f}"
+            )
             bought.append(a)
             covered |= aspects
-        elif bought and coverage >= COVERAGE_TARGET:
+        elif bought and coverage >= policy.coverage_target:
             decision = "skip"
+            policy_rule = "coverage_target"
             reason = (f"question already ~{coverage:.0%} covered by what was paid for — "
-                      f"stopping to preserve ${budget_usdc - spent:.3f} of budget")
+                      f"policy stops new spending and preserves ${budget_before:.3f}")
         elif bought and not novelty:
             decision = "skip"
+            policy_rule = "redundant_coverage"
             reason = ("redundant — its topics are already covered by sources paid for; "
-                      f"saving ${a['price_usdc']:.3f}")
-        elif spent + a["price_usdc"] > budget_usdc + 1e-9:
+                      f"saving ${a['price_usdc']:.3f} and keeping ${budget_before:.3f}")
+        elif (policy.max_price_usdc is not None
+              and a["price_usdc"] > policy.max_price_usdc + 1e-9):
             decision = "skip"
-            reason = f"would exceed the ${budget_usdc:.3f} budget (already spent ${spent:.3f})"
+            policy_rule = "max_price"
+            reason = (
+                f"price ${a['price_usdc']:.3f} exceeds the programmable "
+                f"${policy.max_price_usdc:.3f} per-source cap"
+            )
+        elif (policy.max_purchases is not None
+              and purchase_count >= policy.max_purchases):
+            decision = "skip"
+            policy_rule = "max_purchases"
+            reason = (
+                f"paid-read cap reached ({purchase_count}/{policy.max_purchases}); "
+                f"no transfer authorized and ${budget_before:.3f} remains"
+            )
+        elif spent + a["price_usdc"] > policy.spendable_budget_usdc + 1e-9:
+            decision = "skip"
+            if spent + a["price_usdc"] <= budget_usdc + 1e-9 and policy.reserve_usdc:
+                policy_rule = "reserve_balance"
+                reason = (
+                    f"purchase would dip into the protected ${policy.reserve_usdc:.3f} "
+                    f"reserve (spendable limit ${policy.spendable_budget_usdc:.3f}, "
+                    f"already spent ${spent:.3f})"
+                )
+            else:
+                policy_rule = "total_budget"
+                reason = (
+                    f"would exceed the ${budget_usdc:.3f} total budget "
+                    f"(already spent ${spent:.3f})"
+                )
         else:
             tx = pay_from_buyer_pool(
                 circle,
@@ -230,26 +283,69 @@ def run_agent(query, budget_usdc):
                 buyer_hint=f"agent-run-{run_id}",
             )
             spent += a["price_usdc"]
+            purchase_count += 1
+            budget_after = round(budget_usdc - spent, 6)
             bought.append(a)
             covered |= aspects
             cur.execute("""INSERT INTO receipts(run_id, article_id, creator_id, amount_usdc,
-                           tx_hash, transaction_id, blockchain, source, buyer, created_at)
-                           VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                           tx_hash, transaction_id, blockchain, settlement_mode,
+                           source, buyer, created_at)
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                         (run_id, a["id"], a["creator_id"], a["price_usdc"],
                          tx["tx_hash"], tx.get("transaction_id", ""), tx["blockchain"],
-                         "agent", tx.get("payer_buyer_id", "agent"), time.time()))
+                         tx.get("mode", circle.mode), "agent",
+                         tx.get("payer_buyer_id", "agent"), time.time()))
             base = a["reason"] or "relevant to the query and within budget"
             decision = "buy"
-            reason = base + (f" (+{len(novelty)} new aspect{'s' if len(novelty) != 1 else ''})"
-                             if novelty else "")
-        cur.execute("""INSERT INTO decisions(run_id, article_id, decision, reason,
-                       relevance, price_usdc, created_at) VALUES(?,?,?,?,?,?,?)""",
-                    (run_id, a["id"], decision, reason, a["relevance"], a["price_usdc"], time.time()))
+            policy_rule = "value_purchase"
+            reason = (
+                f"{base}; authorized because relevance {a['relevance']:.2f} >= "
+                f"{policy.min_relevance:.2f}, price ${a['price_usdc']:.3f} fits the "
+                f"configured spending guardrails, and it adds "
+                f"{len(novelty)} new aspect{'s' if len(novelty) != 1 else ''}. "
+                f"Paid read {purchase_count}/{_purchase_limit(policy)}; "
+                f"${budget_after:.3f} remains including the protected "
+                f"${policy.reserve_usdc:.3f} reserve"
+            )
+        cur.execute("""INSERT INTO decisions(
+                       run_id, article_id, decision, reason, policy_rule,
+                       relevance, price_usdc, budget_before_usdc,
+                       budget_after_usdc, created_at
+                       ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (run_id, a["id"], decision, reason, policy_rule,
+                     a["relevance"], a["price_usdc"], budget_before,
+                     budget_after, time.time()))
 
     coverage = _coverage(covered, q_terms, bool(bought))
     answer = _synthesize(query, bought, coverage)
-    cur.execute("UPDATE agent_runs SET status=?, answer=?, total_spent=?, coverage=?, finished_at=? WHERE id=?",
-                ("done", answer, round(spent, 6), round(coverage, 4), time.time(), run_id))
+    if bought and coverage >= policy.coverage_target:
+        stop_rule = "coverage_target"
+        stop_reason = (
+            f"Stopped with {coverage:.0%} query coverage, meeting the "
+            f"{policy.coverage_target:.0%} target; ${budget_usdc - spent:.3f} remains."
+        )
+    elif policy.max_purchases is not None and purchase_count >= policy.max_purchases:
+        stop_rule = "max_purchases"
+        stop_reason = (
+            f"Stopped after {purchase_count} paid read(s), the configured maximum; "
+            f"${budget_usdc - spent:.3f} remains."
+        )
+    elif policy.reserve_usdc and budget_usdc - spent <= policy.reserve_usdc + 1e-9:
+        stop_rule = "reserve_balance"
+        stop_reason = (
+            f"Stopped before touching the protected ${policy.reserve_usdc:.3f} "
+            f"reserve; ${budget_usdc - spent:.3f} remains."
+        )
+    else:
+        stop_rule = "candidate_scan_complete"
+        stop_reason = (
+            f"Stopped after evaluating all {len(articles)} candidates under the "
+            f"policy; {purchase_count} paid read(s), ${budget_usdc - spent:.3f} remains."
+        )
+    cur.execute("""UPDATE agent_runs SET status=?, answer=?, total_spent=?,
+                   coverage=?, stop_rule=?, stop_reason=?, finished_at=? WHERE id=?""",
+                ("done", answer, round(spent, 6), round(coverage, 4),
+                 stop_rule, stop_reason, time.time(), run_id))
     conn.commit()
     conn.close()
     return get_run(run_id)
@@ -282,9 +378,55 @@ def get_run(run_id):
     run["sources_used"] = sources_used
     run["saved_usdc"] = round(sum(d["price_usdc"] for d in decisions if d["decision"] == "reuse"), 6)
     run["budget_remaining"] = round((run.get("budget_usdc") or 0) - (run.get("total_spent") or 0), 6)
+    raw_policy = run.pop("policy_json", None)
+    try:
+        policy = json.loads(raw_policy or "")
+    except (TypeError, ValueError):
+        policy = SpendingPolicy.from_input(run.get("budget_usdc") or 0.001).to_dict()
+    run["policy"] = policy
+    run["spendable_remaining_usdc"] = round(
+        max(0.0, (policy.get("spendable_budget_usdc") or 0)
+            - (run.get("total_spent") or 0)),
+        6,
+    )
+    audit_log = []
+    for d in sorted(decisions, key=lambda item: item["id"]):
+        audit_log.append({
+            "event": d["decision"],
+            "article_id": d["article_id"],
+            "title": d["title"],
+            "rule": d.get("policy_rule") or "legacy_decision",
+            "reason": d.get("reason") or "no reason recorded",
+            "relevance": d.get("relevance"),
+            "price_usdc": d.get("price_usdc"),
+            "budget_before_usdc": d.get("budget_before_usdc"),
+            "budget_after_usdc": d.get("budget_after_usdc"),
+        })
+    audit_log.append({
+        "event": "stop",
+        "article_id": None,
+        "title": "Policy engine",
+        "rule": run.get("stop_rule") or "legacy_run_complete",
+        "reason": run.get("stop_reason") or "Run completed.",
+        "relevance": None,
+        "price_usdc": 0.0,
+        "budget_before_usdc": run["budget_remaining"],
+        "budget_after_usdc": run["budget_remaining"],
+    })
+    run["audit_log"] = audit_log
+    run["purchase_count"] = len([d for d in decisions if d["decision"] == "buy"])
     run["coverage"] = round(coverage, 4)
     run["confidence"] = _confidence(coverage, sources_used)
     run["llm_mode"] = "openai" if llm.available() else "heuristic"
-    run["settlement_mode"] = CircleService().mode
+    receipt_modes = {
+        receipt.get("settlement_mode")
+        for receipt in receipts
+        if receipt.get("settlement_mode") in {"live", "mock"}
+    }
+    run["settlement_mode"] = (
+        "live" if receipt_modes == {"live"}
+        else "mock" if "mock" in receipt_modes
+        else CircleService().mode
+    )
     return run
 

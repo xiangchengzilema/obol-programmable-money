@@ -77,6 +77,7 @@ def test_agent_decides_within_budget():
     assert len(skips) >= 1                             # skipped something
     assert len(run["receipts"]) == len(buys)
     assert all(r["tx_hash"].startswith("0x") for r in run["receipts"])
+    assert all(r["settlement_mode"] == "mock" for r in run["receipts"])
 
 
 def test_agent_reuses_cache_on_second_run():
@@ -113,6 +114,92 @@ def test_agent_stops_when_budget_is_generous():
     assert len(skips) >= 1               # deliberately left sources unbought
 
 
+def test_programmable_policy_enforces_reserve_and_purchase_cap():
+    client.post("/api/demo/reset")
+    run = client.post("/api/agent/run", json={
+        "query": "Arc testnet predictable fees nanopayments agents x402",
+        "budget_usdc": 0.05,
+        "policy": {
+            "reserve_usdc": 0.04,
+            "max_price_usdc": 0.02,
+            "min_relevance": 0.0,
+            "max_purchases": 1,
+            "coverage_target": 1.0,
+        },
+    }).get_json()
+
+    assert run["status"] == "done"
+    assert run["policy"] == {
+        "total_budget_usdc": 0.05,
+        "spendable_budget_usdc": 0.01,
+        "reserve_usdc": 0.04,
+        "max_price_usdc": 0.02,
+        "min_relevance": 0.0,
+        "max_purchases": 1,
+        "coverage_target": 1.0,
+    }
+    assert run["purchase_count"] <= 1
+    assert run["total_spent"] <= 0.01 + 1e-9
+    assert run["budget_remaining"] >= 0.04 - 1e-9
+    assert run["spendable_remaining_usdc"] >= -1e-9
+
+    assert len(run["audit_log"]) == len(run["decisions"]) + 1
+    assert run["audit_log"][-1]["event"] == "stop"
+    assert run["audit_log"][-1]["rule"] in {
+        "coverage_target", "max_purchases", "reserve_balance",
+        "candidate_scan_complete",
+    }
+    for event in run["audit_log"]:
+        assert event["rule"]
+        assert event["reason"]
+        assert event["budget_before_usdc"] is not None
+        assert event["budget_after_usdc"] is not None
+
+
+def test_programmable_policy_blocks_sources_above_price_cap():
+    client.post("/api/demo/reset")
+    run = client.post("/api/agent/run", json={
+        "query": "Arc agents x402 creator receipts",
+        "budget_usdc": 0.05,
+        "policy": {
+            "reserve_usdc": 0,
+            "max_price_usdc": 0.009,
+            "min_relevance": 0,
+            "max_purchases": 5,
+            "coverage_target": 1,
+        },
+    }).get_json()
+
+    assert run["total_spent"] == 0
+    assert run["purchase_count"] == 0
+    assert run["receipts"] == []
+    assert run["decisions"]
+    assert all(d["decision"] == "skip" for d in run["decisions"])
+    assert all(d["policy_rule"] == "max_price" for d in run["decisions"])
+    assert all("per-source cap" in d["reason"] for d in run["decisions"])
+
+
+def test_programmable_policy_validation_is_client_facing():
+    invalid_policies = [
+        ["not", "an", "object"],
+        {"reserve_usdc": 0.06},
+        {"max_price_usdc": -0.01},
+        {"min_relevance": 1.1},
+        {"max_purchases": 1.5},
+        {"coverage_target": -0.1},
+        {"coverage_target": 0},
+        {"typo_budget": 0.01},
+    ]
+    for policy in invalid_policies:
+        response = client.post("/api/agent/run", json={
+            "query": "Arc fees",
+            "budget_usdc": 0.05,
+            "policy": policy,
+        })
+        assert response.status_code == 400
+        assert response.get_json()["error"]
+
+
 def test_stats_has_accountability_counters():
     s = client.get("/api/stats").get_json()
     assert s["decisions_made"] >= 1
@@ -136,11 +223,13 @@ def test_x402_402_then_pay():
     body = r.get_json()
     assert body["accepts"][0]["asset"] == "USDC"
     assert body["accepts"][0]["payTo"].startswith("0x")
+    assert body["proofVerification"] == "demo-format-only"
     # pay → proof → content
     r2 = client.get("/x402/articles/1", headers={"X-Payment": "0x" + "b" * 64})
     assert r2.status_code == 200
     assert "content" in r2.get_json()
     assert r2.get_json()["receipt"]["source"] == "x402"
+    assert r2.get_json()["receipt"]["settlement_mode"] == "mock"
 
 
 def test_x402_replay_is_idempotent_but_bound_to_resource():
@@ -220,3 +309,82 @@ def test_stats_and_ledger_grow():
     ledger = client.get("/api/ledger").get_json()
     assert len(ledger) >= 1
     assert ledger[0]["tx_hash"].startswith("0x")
+
+
+def test_public_demo_blocks_management_and_caps_budget(monkeypatch):
+    monkeypatch.setenv("OBOL_PUBLIC_DEMO", "1")
+    monkeypatch.setenv("OBOL_PUBLIC_MAX_BUDGET_USDC", "0.10")
+
+    health = client.get("/api/health")
+    assert health.status_code == 200
+    assert health.get_json()["public_demo"] is True
+    assert health.get_json()["settlement_mode"] == "mock"
+
+    create = client.post("/api/creators", json={
+        "name": "Blocked",
+        "payout_address": "0x" + "a" * 40,
+    })
+    assert create.status_code == 403
+
+    reset = client.post("/api/demo/reset")
+    assert reset.status_code == 403
+
+    too_large = client.post("/api/agent/run", json={
+        "query": "Arc agent payments",
+        "budget_usdc": 0.11,
+    })
+    assert too_large.status_code == 400
+    assert "public demo budget" in too_large.get_json()["error"]
+
+
+def test_public_x402_demo_receipt_is_not_persisted(monkeypatch):
+    client.post("/api/demo/reset")
+    before = client.get("/api/stats").get_json()
+    monkeypatch.setenv("OBOL_PUBLIC_DEMO", "1")
+
+    paid = client.get(
+        "/x402/articles/1",
+        headers={
+            "X-Payment": "0x" + "9" * 64,
+            "X-Payer": "public-demo-agent",
+        },
+    )
+    assert paid.status_code == 200
+    receipt = paid.get_json()["receipt"]
+    assert receipt["settlement_mode"] == "mock"
+    assert receipt["persisted"] is False
+    assert receipt["source"] == "x402-demo"
+    assert receipt["blockchain"] == "SIMULATED-ARC-TESTNET"
+
+    after = client.get("/api/stats").get_json()
+    assert after["total_reads"] == before["total_reads"]
+    assert after["total_paid_usdc"] == before["total_paid_usdc"]
+
+
+def test_stats_separate_live_and_demo_receipts():
+    client.post("/api/demo/reset")
+    client.post("/api/agent/run", json={
+        "query": "Arc payments",
+        "budget_usdc": 0.05,
+    })
+    stats = client.get("/api/stats").get_json()
+    assert stats["live_reads"] == 0
+    assert stats["live_paid_usdc"] == 0
+    assert stats["demo_reads"] == stats["total_reads"]
+    assert stats["demo_paid_usdc"] == stats["total_paid_usdc"]
+
+
+def test_live_x402_refuses_unverified_proof(monkeypatch):
+    class LiveCircle:
+        mode = "live"
+
+    monkeypatch.delenv("OBOL_PUBLIC_DEMO", raising=False)
+    monkeypatch.delenv("OBOL_ALLOW_UNVERIFIED_X402_PROOFS", raising=False)
+    monkeypatch.setattr(appmod, "CircleService", lambda: LiveCircle())
+
+    paid = client.get(
+        "/x402/articles/1",
+        headers={"X-Payment": "0x" + "f" * 64},
+    )
+    assert paid.status_code == 501
+    assert "refusing an unverified payment proof" in paid.get_json()["error"]

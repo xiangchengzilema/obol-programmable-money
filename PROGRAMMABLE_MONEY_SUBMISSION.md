@@ -57,6 +57,22 @@ spending policies and accountability, refreshing live testnet evidence,
 deploying a stable public demo, updating the README, and recording a new
 three-minute demo. All testnet and evaluation activity will be labeled honestly.
 
+## Post-Checkpoint 2 build update — 27 July 2026
+
+Immediately after submitting the checkpoint, we added request-scoped
+programmable spending controls: a protected reserve, per-source price cap,
+minimum relevance threshold, maximum purchase count, and coverage target.
+Every run now stores an immutable policy snapshot. Each buy, reuse, or skip
+records the rule that fired and the budget before and after the action, while a
+final stop event explains why the spending loop ended.
+
+The browser console exposes these guardrails and renders the resulting policy
+audit. We also added a production Gunicorn entrypoint and Railway configuration.
+The public WSGI deployment is fail-closed to mock settlement so a judge-facing
+anonymous service cannot accidentally receive Circle wallet credentials. The
+current automated verification result is 26 backend tests passing plus a clean
+JavaScript syntax check.
+
 ## Track fit
 
 Obol is not a chatbot wrapper or a scripted checkout. The agent receives a real
@@ -81,4 +97,3 @@ presenting Obol as a project started from scratch during this hackathon.
 ## Repository
 
 https://github.com/xiangchengzilema/obol-programmable-money
-

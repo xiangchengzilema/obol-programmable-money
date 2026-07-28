@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 **/.pytest_cache/
+pytest-cache-files-*/
+**/pytest-cache-files-*/
 
 # Local secrets and live testnet state
 .env
