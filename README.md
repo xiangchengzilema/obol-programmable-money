@@ -2,6 +2,8 @@
 
 **Arc Programmable Money Hackathon · Agentic Economy track**
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/xiangchengzilema/obol-programmable-money)
+
 Obol gives autonomous AI agents a USDC budget to buy creator content per read,
 settle through Circle Wallets on Arc, and produce a receipt for every buy,
 reuse, skip, or stop decision.

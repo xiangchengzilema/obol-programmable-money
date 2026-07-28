@@ -17,7 +17,21 @@ Live Arc Testnet evidence is generated only from the local, ignored
 `backend/.env` and then documented with non-secret transaction proof. This
 keeps an anonymous website from being able to spend from a testnet wallet.
 
-## Railway deployment
+## Render deployment (recommended free judge demo)
+
+The checked-in `render.yaml` creates one free Python web service with the
+public-demo safety variables already set.
+
+1. Open the **Deploy to Render** button in `README.md`.
+2. Sign in with GitHub and approve the Blueprint.
+3. Wait for `/api/health` to become healthy.
+
+Render's free service can sleep after 15 idle minutes and uses an ephemeral
+filesystem. The first request may therefore take about a minute, and receipts
+may reset after a restart. `OBOL_AUTO_SEED=1` keeps the judge demo usable after
+every cold start. No Circle or OpenAI secrets belong on this public service.
+
+## Railway deployment (paid-plan alternative)
 
 The repository includes `railway.json`, `.python-version`, `Procfile`, and
 `backend/wsgi.py`.
