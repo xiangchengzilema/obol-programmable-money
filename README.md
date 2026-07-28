@@ -2,6 +2,8 @@
 
 **Arc Programmable Money Hackathon · Agentic Economy track**
 
+[**Live judge demo → obol-programmable-money.onrender.com**](https://obol-programmable-money.onrender.com)
+
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/xiangchengzilema/obol-programmable-money)
 
 Obol gives autonomous AI agents a USDC budget to buy creator content per read,

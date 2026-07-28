@@ -130,7 +130,10 @@ https://github.com/xiangchengzilema/obol-programmable-money
 
 ### Public demo
 
-`[FINAL: public HTTPS demo URL; verify in a logged-out/incognito browser]`
+https://obol-programmable-money.onrender.com
+
+Verified without credentials on 2026-07-28 at 12:32 (Asia/Shanghai). The free
+Render instance may take up to a minute to wake after a period of inactivity.
 
 ### Pitch/demo video
 
@@ -185,8 +188,8 @@ claim planned work as completed work.
   explicit final stop event in every run audit.
 - A public-demo WSGI safety boundary that defaults anonymous deployments to
   mock settlement and refuses unverified x402 proofs in live mode.
-- Railway configuration, a production Gunicorn entrypoint, health check, and
-  documented optional persistent SQLite volume.
+- Render and Railway configuration, a production Gunicorn entrypoint, health
+  check, and documented deployment persistence trade-offs.
 - Browser policy controls and a judge-readable policy audit panel.
 - **26 backend tests passing** with
   `python -m pytest -q test_obol.py -p no:cacheprovider`, plus a successful
@@ -203,7 +206,7 @@ claim planned work as completed work.
 > Hackathon. In the separate Arc iteration, we added request-scoped spending
 > guardrails, immutable policy and stop audits, browser policy controls, and a
 > fail-closed public-demo deployment path. We also published
-> `[FINAL: public demo/evidence]` and verified the build with 26 backend tests
+> https://obol-programmable-money.onrender.com and verified the build with 26 backend tests
 > plus a JavaScript syntax check. Any seeded usage, automated
 > evaluation, and testnet transfers shown in the demo are labelled as
 > evaluation activity, not organic traction.
@@ -212,16 +215,16 @@ claim planned work as completed work.
 
 | Claim | Evidence required | Final value |
 |---|---|---|
-| Public demo works | Incognito smoke test | `[FINAL: URL + UTC/Beijing verification time]` |
+| Public demo works | Logged-out HTTP smoke test | `https://obol-programmable-money.onrender.com — HTTP 200 verified 2026-07-28 12:32 Asia/Shanghai` |
 | Repository is public | Logged-out GitHub check | `https://github.com/xiangchengzilema/obol-programmable-money` |
 | Tests pass | Fresh terminal output | `26 passed; final commit SHA pending` |
 | Frontend parses | Fresh `node --check` output | `Passed; final commit SHA pending` |
-| Settlement mode is explicit | `/api/settlement/status` screenshot/JSON | `[FINAL: mock or live]` |
+| Settlement mode is explicit | `/api/settlement/status` screenshot/JSON | `mock; force_mock=true; ready_for_live_transfers=false` |
 | Fresh Circle transfer exists | Circle transaction status | `[FINAL: transaction ID, redact non-public wallet metadata]` |
 | Fresh Arc proof exists | Public Arc Testnet explorer | `[FINAL: tx URL/hash]` |
-| Agent respects budget | Demo response and/or test | `[FINAL: budget, amount spent, amount left]` |
-| Agent makes accountable choices | Decision trace | `[FINAL: one buy, reuse, skip, or stop example]` |
-| x402 flow works | 402 response followed by authorized 200 | `[FINAL: screenshot/terminal capture]` |
+| Agent respects budget | Demo response and/or test | `$0.050 budget; $0.010 spent; $0.040 remaining; $0.005 protected reserve` |
+| Agent makes accountable choices | Decision trace | `One buy plus explicit redundant_coverage, min_relevance, and candidate_scan_complete decisions` |
+| x402 flow works | 402 response followed by authorized 200 | `Verified on public demo 2026-07-28; demo receipt is mock-labelled and persisted=false` |
 | Video is public | Logged-out playback | `[FINAL: URL and exact duration]` |
 | Deck is public | Logged-out view | `[FINAL: URL]` |
 
