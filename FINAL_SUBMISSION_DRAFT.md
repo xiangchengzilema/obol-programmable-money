@@ -57,8 +57,10 @@ access.
 Obol was originally created for the Lepton Agents Hackathon. This Arc entry is
 an openly disclosed continuation in a separate repository, not a project
 presented as new from scratch. The original Lepton submission remains frozen.
-For this hackathon, we focused on `[FINAL: list only verified new work completed
-in this repository]`.
+For this hackathon, we added request-scoped programmable spending guardrails,
+immutable rule and stop audits, a fail-closed public deployment, a fresh Circle
+Wallets payment on Arc Testnet, a server-side Arc verifier, and a judge-readable
+evidence panel.
 
 The result is a concrete agentic-money loop: a spending constraint changes the
 agent's reasoning, the agent decides whether value justifies payment, and every
@@ -142,8 +144,10 @@ or below three minutes]`
 
 ### Presentation deck
 
-`[FINAL: public Google Slides/Canva/PDF link; enable “anyone with the link can
-view”]`
+https://github.com/xiangchengzilema/obol-programmable-money/blob/main/submission/Obol_Arc_Programmable_Money_Deck_Final.pdf
+
+Editable PPTX:
+https://github.com/xiangchengzilema/obol-programmable-money/blob/main/submission/Obol_Arc_Programmable_Money_Deck_Final.pptx
 
 ### Link access instructions
 
@@ -153,7 +157,7 @@ testnet/evaluation metrics shown in the interface are labelled as such.
 
 ### Team
 
-Solo builder — `[FINAL: confirm the public name to display]`
+Chengzi (solo builder)
 
 ## 2. Existing-project disclosure
 
@@ -191,14 +195,21 @@ claim planned work as completed work.
 - Render and Railway configuration, a production Gunicorn entrypoint, health
   check, and documented deployment persistence trade-offs.
 - Browser policy controls and a judge-readable policy audit panel.
-- **26 backend tests passing** with
+- **46 backend tests passing** with
   `python -m pytest -q test_obol.py -p no:cacheprovider`, plus a successful
   `node --check frontend/app.js`.
-- `[FINAL: fresh Arc Testnet evidence generated specifically for this repo,
-  including a public explorer link if available]`
-- `[FINAL: new evaluation result, explicitly labelled demo/evaluation rather
-  than user traction]`
-- `[FINAL: competition-specific deck and three-minute video]`
+- Fresh Arc Testnet evidence generated specifically from this repository:
+  $0.010 USDC, Circle state `COMPLETE`, Arc block `55,584,226`, and
+  [public Arcscan proof](https://testnet.arcscan.app/tx/0x03a7e7c96283b545798d101d46a4fb48865bcb069fdba2311352fe9e56b92809).
+- Server-side Arc transaction verification with primary-plus-fallback RPC, Arc chain-ID
+  validation, and provider-credential redaction.
+- Cold-start judge demo repair, x402 `X-Payment`/`X-Payer` CORS support, and
+  explicit settlement-mode persistence across every receipt utility.
+- A fresh evaluation run spent $0.010 of a $0.050 budget, preserved $0.040,
+  reached 67% coverage, and stopped on the configured `coverage_target`. This
+  is explicitly labelled testnet evaluation activity, not user traction.
+- Competition-specific seven-slide deck created; the public three-minute video
+  link is still the remaining media deliverable.
 
 ### Paste-ready “what changed” paragraph
 
@@ -206,8 +217,9 @@ claim planned work as completed work.
 > Hackathon. In the separate Arc iteration, we added request-scoped spending
 > guardrails, immutable policy and stop audits, browser policy controls, and a
 > fail-closed public-demo deployment path. We also published
-> https://obol-programmable-money.onrender.com and verified the build with 26 backend tests
-> plus a JavaScript syntax check. Any seeded usage, automated
+> https://obol-programmable-money.onrender.com, generated a fresh $0.010 Circle
+> Wallets transfer on Arc Testnet with public transaction proof, and verified
+> the build with 46 backend tests plus a JavaScript syntax check. Any seeded usage, automated
 > evaluation, and testnet transfers shown in the demo are labelled as
 > evaluation activity, not organic traction.
 
@@ -217,16 +229,16 @@ claim planned work as completed work.
 |---|---|---|
 | Public demo works | Logged-out HTTP smoke test | `https://obol-programmable-money.onrender.com — HTTP 200 verified 2026-07-28 12:32 Asia/Shanghai` |
 | Repository is public | Logged-out GitHub check | `https://github.com/xiangchengzilema/obol-programmable-money` |
-| Tests pass | Fresh terminal output | `26 passed; final commit SHA pending` |
+| Tests pass | Fresh terminal output | `46 passed; final commit SHA pending` |
 | Frontend parses | Fresh `node --check` output | `Passed; final commit SHA pending` |
 | Settlement mode is explicit | `/api/settlement/status` screenshot/JSON | `mock; force_mock=true; ready_for_live_transfers=false` |
-| Fresh Circle transfer exists | Circle transaction status | `[FINAL: transaction ID, redact non-public wallet metadata]` |
-| Fresh Arc proof exists | Public Arc Testnet explorer | `[FINAL: tx URL/hash]` |
+| Fresh Circle transfer exists | Circle transaction status | `d7e70603-cd6f-5c8c-96e8-7aacc4c10892 / COMPLETE / ARC-TESTNET` |
+| Fresh Arc proof exists | Public Arc Testnet explorer | [`0x03a7...b92809`](https://testnet.arcscan.app/tx/0x03a7e7c96283b545798d101d46a4fb48865bcb069fdba2311352fe9e56b92809), block `55,584,226`, status success |
 | Agent respects budget | Demo response and/or test | `$0.050 budget; $0.010 spent; $0.040 remaining; $0.005 protected reserve` |
 | Agent makes accountable choices | Decision trace | `One buy plus explicit redundant_coverage, min_relevance, and candidate_scan_complete decisions` |
 | x402 flow works | 402 response followed by authorized 200 | `Verified on public demo 2026-07-28; demo receipt is mock-labelled and persisted=false` |
 | Video is public | Logged-out playback | `[FINAL: URL and exact duration]` |
-| Deck is public | Logged-out view | `[FINAL: URL]` |
+| Deck is public | Logged-out view | `https://github.com/xiangchengzilema/obol-programmable-money/blob/main/submission/Obol_Arc_Programmable_Money_Deck_Final.pdf` |
 
 If fresh live settlement is not available, remove any statement that suggests a
 live transfer was completed in this iteration. State instead that the product
@@ -269,8 +281,8 @@ budget, and result visible.
 > The agent evaluates preview relevance, price, redundancy, prior purchases,
 > current coverage, and remaining budget. It can buy a useful source, reuse an
 > authorized source for free, skip a weak or unaffordable one, or stop when it
-> has enough evidence. Here, it spent `[FINAL: amount]` from a `[FINAL: budget]`
-> budget and left `[FINAL: remainder]` unspent.
+> has enough evidence. In this evaluation run, it spent $0.010 from a $0.050
+> budget and left $0.040 unspent.
 
 ### 1:10–1:40 — Explain the decision trace
 
@@ -320,9 +332,9 @@ URL.
 **Say:**
 
 > Obol began in an earlier hackathon, and we disclose that openly. For this Arc
-> iteration we added `[FINAL: verified improvement 1]`, `[FINAL: improvement
-> 2]`, `[FINAL: improvement 3]`, and `[FINAL: improvement 4]` in a separate
-> repository.
+> iteration we added programmable spending guardrails, immutable decision and
+> stop audits, a fail-closed public deployment, and server-side verification of
+> fresh Circle/Arc evidence in a separate repository.
 
 ### 2:48–2:58 — Close
 
@@ -392,8 +404,8 @@ transaction hash.
 **Visual:** Three final screenshots: agent run, ledger/explorer proof, x402
 challenge-and-retry.
 
-**Proof points:** `[FINAL: exact tests]`; `[FINAL: public demo]`; `[FINAL: fresh
-testnet evidence or clearly labelled mock fallback]`.
+**Proof points:** 46 backend tests; public Render demo; fresh $0.010 Arc Testnet
+evaluation transfer with Circle `COMPLETE` and an Arcscan link.
 
 Footer: “Seeded usage, automated evaluation, and testnet transfers are not
 organic traction.”
@@ -405,8 +417,8 @@ organic traction.”
 **Visual:** Two columns: inherited baseline versus verified work completed in
 this hackathon.
 
-**Proof points:** `[FINAL: improvement 1]`; `[FINAL: improvement 2]`; `[FINAL:
-improvement 3]`.
+**Proof points:** programmable policy guardrails; immutable decision/stop audit;
+server-side Arc verification and a fail-closed public demo.
 
 Close with repository, demo, video, and “Agentic Economy.”
 

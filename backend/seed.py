@@ -164,11 +164,15 @@ def seed(force=False):
     conn = get_db()
     cur = conn.cursor()
     if force:
-        for t in ("receipts", "decisions", "agent_runs", "articles", "creators"):
+        for t in (
+            "payment_claims", "receipts", "decisions", "agent_runs",
+            "articles", "creators",
+        ):
             cur.execute(f"DELETE FROM {t}")
         try:
             cur.execute("DELETE FROM sqlite_sequence WHERE name IN "
-                        "('receipts','decisions','agent_runs','articles','creators')")
+                        "('payment_claims','receipts','decisions','agent_runs',"
+                        "'articles','creators')")
         except Exception:
             pass
     if cur.execute("SELECT COUNT(*) FROM creators").fetchone()[0] > 0 and not force:

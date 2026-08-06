@@ -80,13 +80,148 @@ def _creator_rows(conn):
     return [dict(r) for r in conn.execute("SELECT * FROM creators ORDER BY id").fetchall()]
 
 
-def _earned_by_creator(conn):
+def _earned_by_creator(conn, settlement_scope="live"):
+    """Return settled revenue plus clearly separated unverified attempts."""
+    scope = settlement_scope if settlement_scope in {"live", "mock"} else ""
     rows = conn.execute("""
-        SELECT c.id, COALESCE(SUM(r.amount_usdc), 0) AS earned, COUNT(r.id) AS receipts
-        FROM creators c LEFT JOIN receipts r ON r.creator_id = c.id
+        WITH cfg(scope) AS (SELECT ?)
+        SELECT c.id,
+               COALESCE(SUM(CASE WHEN
+                    (cfg.scope<>'' AND r.settlement_mode=cfg.scope
+                     AND r.settlement_scope=cfg.scope)
+                    OR (cfg.scope='' AND (
+                        (r.settlement_mode='live' AND r.settlement_scope='live')
+                        OR (r.settlement_mode='mock' AND r.settlement_scope='mock')
+                    ))
+                    THEN r.amount_usdc ELSE 0 END), 0) AS earned,
+               COUNT(CASE WHEN
+                    (cfg.scope<>'' AND r.settlement_mode=cfg.scope
+                     AND r.settlement_scope=cfg.scope)
+                    OR (cfg.scope='' AND (
+                        (r.settlement_mode='live' AND r.settlement_scope='live')
+                        OR (r.settlement_mode='mock' AND r.settlement_scope='mock')
+                    )) THEN 1 END) AS receipts,
+               COALESCE(SUM(CASE WHEN r.settlement_mode='live'
+                    AND r.settlement_scope='live'
+                    THEN r.amount_usdc ELSE 0 END), 0) AS live_earned_usdc,
+               COALESCE(SUM(CASE WHEN r.settlement_mode='mock'
+                    AND r.settlement_scope='mock'
+                    THEN r.amount_usdc ELSE 0 END), 0) AS mock_earned_usdc,
+               COALESCE(SUM(CASE WHEN r.settlement_mode='pending'
+                    AND (cfg.scope='' OR r.settlement_scope=cfg.scope)
+                    THEN r.amount_usdc ELSE 0 END), 0) AS pending_usdc,
+               COUNT(CASE WHEN r.settlement_mode='pending'
+                    AND (cfg.scope='' OR r.settlement_scope=cfg.scope)
+                    THEN 1 END) AS pending_receipts,
+               COALESCE(SUM(CASE WHEN r.settlement_mode IN ('pending','failed','legacy')
+                    OR (r.settlement_mode='live' AND r.settlement_scope<>'live')
+                    OR (r.settlement_mode='mock' AND r.settlement_scope<>'mock')
+                    THEN r.amount_usdc ELSE 0 END), 0) AS unverified_usdc,
+               COUNT(CASE WHEN r.settlement_mode IN ('pending','failed','legacy')
+                    OR (r.settlement_mode='live' AND r.settlement_scope<>'live')
+                    OR (r.settlement_mode='mock' AND r.settlement_scope<>'mock')
+                    THEN 1 END) AS unverified_receipts
+        FROM creators c CROSS JOIN cfg
+        LEFT JOIN receipts r ON r.creator_id = c.id
         GROUP BY c.id
-    """).fetchall()
-    return {r["id"]: {"earned": _money(r["earned"]), "receipts": r["receipts"]} for r in rows}
+    """, (scope,)).fetchall()
+    return {
+        r["id"]: {
+            "earned": _money(r["earned"]),
+            "receipts": r["receipts"],
+            "live_earned_usdc": _money(r["live_earned_usdc"]),
+            "mock_earned_usdc": _money(r["mock_earned_usdc"]),
+            "pending_usdc": _money(r["pending_usdc"]),
+            "pending_receipts": r["pending_receipts"],
+            "unverified_usdc": _money(r["unverified_usdc"]),
+            "unverified_receipts": r["unverified_receipts"],
+        }
+        for r in rows
+    }
+
+
+def _claim_payment(conn, article, creator, buyer, amount):
+    """Create/adopt one live payment intent before calling Circle."""
+    now = time.time()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        claim = conn.execute(
+            """SELECT r.* FROM payment_claims p
+               JOIN receipts r ON r.id=p.receipt_id
+               WHERE p.claim_type=? AND p.article_id=? AND p.buyer_key=?
+                 AND p.settlement_scope='live'""",
+            (SOURCE, article["id"], buyer),
+        ).fetchone()
+        if claim:
+            conn.commit()
+            return dict(claim), False
+
+        existing = conn.execute(
+            """SELECT * FROM receipts
+               WHERE article_id=? AND creator_id=? AND buyer=? AND source=?
+                 AND settlement_scope='live' AND settlement_mode<>'legacy'
+               ORDER BY CASE WHEN settlement_mode='live' THEN 0
+                              WHEN settlement_mode='pending' THEN 1
+                              ELSE 2 END, id DESC LIMIT 1""",
+            (article["id"], creator["id"], buyer, SOURCE),
+        ).fetchone()
+        if existing:
+            receipt_id = existing["id"]
+        else:
+            cur = conn.execute(
+                """INSERT INTO receipts(run_id, article_id, creator_id, amount_usdc,
+                   tx_hash, transaction_id, blockchain, settlement_mode,
+                   settlement_scope, source, buyer, created_at)
+                   VALUES(NULL,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    article["id"], creator["id"], amount,
+                    "", "", "ARC-TESTNET", "pending", "live", SOURCE,
+                    buyer, now,
+                ),
+            )
+            receipt_id = cur.lastrowid
+        conn.execute(
+            """INSERT OR IGNORE INTO payment_claims(
+               claim_type, article_id, buyer_key, settlement_scope,
+               receipt_id, created_at, updated_at)
+               VALUES(?,?,?,?,?,?,?)""",
+            (SOURCE, article["id"], buyer, "live", receipt_id, now, now),
+        )
+        claim = conn.execute(
+            """SELECT r.* FROM payment_claims p
+               JOIN receipts r ON r.id=p.receipt_id
+               WHERE p.claim_type=? AND p.article_id=? AND p.buyer_key=?
+                 AND p.settlement_scope='live'""",
+            (SOURCE, article["id"], buyer),
+        ).fetchone()
+        conn.commit()
+        return dict(claim), existing is None and claim["id"] == receipt_id
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def _update_claim(conn, receipt_id, settlement_mode, tx=None):
+    tx = tx if isinstance(tx, dict) else {}
+    conn.execute(
+        """UPDATE receipts
+           SET tx_hash=?, transaction_id=?, blockchain=?, settlement_mode=?
+           WHERE id=?""",
+        (
+            tx.get("tx_hash", ""), tx.get("transaction_id", ""),
+            tx.get("blockchain", "ARC-TESTNET"), settlement_mode, receipt_id,
+        ),
+    )
+    conn.execute(
+        "UPDATE payment_claims SET updated_at=? WHERE receipt_id=?",
+        (time.time(), receipt_id),
+    )
+    conn.commit()
+
+
+def _definitely_insufficient(exc):
+    message = str(exc).lower()
+    return "insufficient" in message or "155258" in message
 
 
 def _ensure_creator_wallets(conn, circle, replace_placeholders=True):
@@ -178,10 +313,15 @@ def build_plan(target_usdc=TARGET_USDC, profile="floor"):
     init_db()
     enrich_demo.enrich()
     conn = get_db()
-    earned = _earned_by_creator(conn)
+    earned = _earned_by_creator(conn, settlement_scope="live")
     rows = []
     for creator in _creator_rows(conn):
-        current = earned.get(creator["id"], {"earned": 0, "receipts": 0})
+        current = earned.get(creator["id"], {
+            "earned": 0, "receipts": 0, "live_earned_usdc": 0,
+            "mock_earned_usdc": 0, "pending_usdc": 0,
+            "pending_receipts": 0, "unverified_usdc": 0,
+            "unverified_receipts": 0,
+        })
         target = _target_for(creator["name"], target_usdc, profile)
         missing = max(0.0, target - current["earned"])
         rows.append({
@@ -190,6 +330,12 @@ def build_plan(target_usdc=TARGET_USDC, profile="floor"):
             "target_usdc": target,
             "current_usdc": _money(current["earned"]),
             "receipts": current["receipts"],
+            "live_earned_usdc": current["live_earned_usdc"],
+            "mock_earned_usdc": current["mock_earned_usdc"],
+            "pending_usdc": current["pending_usdc"],
+            "pending_receipts": current["pending_receipts"],
+            "unverified_usdc": current["unverified_usdc"],
+            "unverified_receipts": current["unverified_receipts"],
             "needed_usdc": _money(missing),
             "payout_address": creator["payout_address"],
         })
@@ -210,10 +356,15 @@ def execute(target_usdc=TARGET_USDC, live=False, create_creator_wallets=False, p
         wallet_updates = _ensure_creator_wallets(conn, circle)
 
     creators = _creator_rows(conn)
-    earned = _earned_by_creator(conn)
+    earned = _earned_by_creator(conn, settlement_scope="live")
     payments = []
     for idx, creator in enumerate(creators):
-        current = earned.get(creator["id"], {"earned": 0, "receipts": 0})
+        current = earned.get(creator["id"], {
+            "earned": 0, "receipts": 0, "live_earned_usdc": 0,
+            "mock_earned_usdc": 0, "pending_usdc": 0,
+            "pending_receipts": 0, "unverified_usdc": 0,
+            "unverified_receipts": 0,
+        })
         target = _target_for(creator["name"], target_usdc, profile)
         needed = _money(max(0.0, target - current["earned"]))
         if needed <= 0:
@@ -235,27 +386,50 @@ def execute(target_usdc=TARGET_USDC, live=False, create_creator_wallets=False, p
             })
             continue
 
-        tx = circle.send_usdc(creator["payout_address"], price, reference=f"obol-eval-{creator['id']}")
-        conn.execute(
-            """INSERT INTO receipts(run_id, article_id, creator_id, amount_usdc,
-               tx_hash, transaction_id, blockchain, source, buyer, created_at)
-               VALUES(NULL,?,?,?,?,?,?,?,?,?)""",
-            (
-                article["id"],
-                creator["id"],
-                price,
-                tx.get("tx_hash", ""),
-                tx.get("transaction_id", ""),
-                tx.get("blockchain", "ARC-TESTNET"),
-                SOURCE,
-                buyer,
-                time.time(),
-            ),
-        )
-        conn.commit()
+        receipt, owned = _claim_payment(conn, article, creator, buyer, price)
+        if not owned:
+            mode = receipt.get("settlement_mode", "pending")
+            payments.append({
+                "creator": creator["name"],
+                "status": "already-settled" if mode == "live" else mode,
+                "settlement_mode": mode,
+                "amount_usdc": price,
+                "article": article["title"],
+                "buyer": buyer,
+                "tx_hash": receipt.get("tx_hash", ""),
+                "transaction_id": receipt.get("transaction_id", ""),
+                "payout_address": creator["payout_address"],
+            })
+            continue
+        try:
+            tx = circle.send_usdc(
+                creator["payout_address"], price,
+                reference=f"obol-eval-{creator['id']}",
+            )
+            settlement_mode = circle.settlement_mode_for_transaction(tx, circle.mode)
+            _update_claim(conn, receipt["id"], settlement_mode, tx)
+        except Exception as exc:
+            settlement_mode = "failed" if _definitely_insufficient(exc) else "pending"
+            if settlement_mode == "failed":
+                _update_claim(conn, receipt["id"], "failed")
+            payments.append({
+                "creator": creator["name"],
+                "status": settlement_mode,
+                "settlement_mode": settlement_mode,
+                "amount_usdc": price,
+                "article": article["title"],
+                "buyer": buyer,
+                "error": str(exc)[:500],
+                "payout_address": creator["payout_address"],
+            })
+            continue
         payments.append({
             "creator": creator["name"],
-            "status": tx.get("state", "submitted"),
+            "status": (
+                tx.get("state", "submitted")
+                if settlement_mode == "live" else settlement_mode
+            ),
+            "settlement_mode": settlement_mode,
             "amount_usdc": price,
             "article": article["title"],
             "buyer": buyer,
@@ -265,14 +439,25 @@ def execute(target_usdc=TARGET_USDC, live=False, create_creator_wallets=False, p
         })
 
     summary = []
-    refreshed = _earned_by_creator(conn)
+    refreshed = _earned_by_creator(conn, settlement_scope="live")
     for creator in _creator_rows(conn):
-        row = refreshed.get(creator["id"], {"earned": 0, "receipts": 0})
+        row = refreshed.get(creator["id"], {
+            "earned": 0, "receipts": 0, "live_earned_usdc": 0,
+            "mock_earned_usdc": 0, "pending_usdc": 0,
+            "pending_receipts": 0, "unverified_usdc": 0,
+            "unverified_receipts": 0,
+        })
         creator_target = _target_for(creator["name"], target_usdc, profile)
         summary.append({
             "creator": creator["name"],
             "earned_usdc": _money(row["earned"]),
             "receipts": row["receipts"],
+            "live_earned_usdc": row["live_earned_usdc"],
+            "mock_earned_usdc": row["mock_earned_usdc"],
+            "pending_usdc": row["pending_usdc"],
+            "pending_receipts": row["pending_receipts"],
+            "unverified_usdc": row["unverified_usdc"],
+            "unverified_receipts": row["unverified_receipts"],
             "target_usdc": creator_target,
             "target_met": row["earned"] >= creator_target,
         })

@@ -30,7 +30,11 @@ import time
 
 from db import get_db
 from circle_service import CircleService
-from wallet_pool import pay_from_buyer_pool
+from wallet_pool import (
+    SettlementOutcomeUnknown,
+    WalletPoolExhausted,
+    pay_from_buyer_pool,
+)
 from spending_policy import SpendingPolicy
 import llm
 
@@ -168,6 +172,170 @@ def _purchase_limit(policy):
     return policy.max_purchases if policy.max_purchases is not None else "unlimited"
 
 
+def _claim_agent_receipt(conn, run_id, article, settlement_scope):
+    """Atomically reserve one article payment before calling Circle.
+
+    A separate claim table provides concurrency control without mutating or
+    deleting historical receipt evidence.  Existing confirmed receipts win
+    over stale pending rows when an older database is adopted.
+    """
+    now = time.time()
+    try:
+        # Earlier skip/reuse decisions in this run may already have opened an
+        # implicit SQLite transaction. Persist them before taking the atomic
+        # write lock for the external-payment claim.
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            """DELETE FROM payment_claims
+               WHERE claim_type='agent' AND article_id=?
+                 AND buyer_key='agent' AND settlement_scope=?
+                 AND NOT EXISTS (
+                   SELECT 1 FROM receipts r
+                   WHERE r.id=payment_claims.receipt_id
+                     AND r.article_id=payment_claims.article_id
+                     AND r.source='agent'
+                     AND r.settlement_scope=payment_claims.settlement_scope
+                     AND r.settlement_mode IN ('live','mock','pending')
+                 )""",
+            (article["id"], settlement_scope),
+        )
+        row = conn.execute(
+            """SELECT r.* FROM payment_claims pc
+               JOIN receipts r ON r.id=pc.receipt_id
+               WHERE pc.claim_type='agent' AND pc.article_id=?
+                 AND pc.buyer_key='agent' AND pc.settlement_scope=?
+                 AND r.article_id=pc.article_id AND r.source='agent'
+                 AND r.settlement_scope=pc.settlement_scope
+                 AND r.settlement_mode IN ('live','mock','pending')""",
+            (article["id"], settlement_scope),
+        ).fetchone()
+        if row is not None:
+            conn.commit()
+            return dict(row), False
+
+        row = conn.execute(
+            """SELECT * FROM receipts
+               WHERE article_id=? AND source='agent' AND settlement_scope=?
+                 AND settlement_mode IN ('live','mock','pending')
+               ORDER BY CASE settlement_mode
+                          WHEN 'live' THEN 0 WHEN 'mock' THEN 0 ELSE 1 END,
+                        id DESC LIMIT 1""",
+            (article["id"], settlement_scope),
+        ).fetchone()
+        if row is not None:
+            conn.execute(
+                """INSERT INTO payment_claims(
+                       claim_type, article_id, buyer_key, settlement_scope,
+                       receipt_id, created_at, updated_at
+                   ) VALUES('agent',?,?,?,?,?,?)""",
+                (article["id"], "agent", settlement_scope, row["id"], now, now),
+            )
+            conn.commit()
+            return dict(row), False
+
+        cur = conn.execute(
+            """INSERT INTO receipts(
+                   run_id, article_id, creator_id, amount_usdc, tx_hash,
+                   transaction_id, blockchain, settlement_mode, settlement_scope,
+                   source, buyer, created_at
+               ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                run_id,
+                article["id"],
+                article["creator_id"],
+                article["price_usdc"],
+                "",
+                "",
+                "ARC-TESTNET",
+                "pending",
+                settlement_scope,
+                "agent",
+                "agent",
+                now,
+            ),
+        )
+        receipt_id = cur.lastrowid
+        conn.execute(
+            """INSERT INTO payment_claims(
+                   claim_type, article_id, buyer_key, settlement_scope,
+                   receipt_id, created_at, updated_at
+               ) VALUES('agent',?,?,?,?,?,?)""",
+            (article["id"], "agent", settlement_scope, receipt_id, now, now),
+        )
+        row = conn.execute(
+            "SELECT * FROM receipts WHERE id=?", (receipt_id,)
+        ).fetchone()
+        conn.commit()
+        return dict(row), True
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def _update_agent_receipt(conn, receipt_id, tx, settlement_mode):
+    conn.execute(
+        """UPDATE receipts SET tx_hash=?, transaction_id=?, blockchain=?,
+           settlement_mode=?, buyer=? WHERE id=?""",
+        (
+            tx.get("tx_hash", ""),
+            tx.get("transaction_id", ""),
+            tx.get("blockchain", "ARC-TESTNET"),
+            settlement_mode,
+            tx.get("payer_buyer_id", "agent"),
+            receipt_id,
+        ),
+    )
+    if settlement_mode == "failed":
+        # A terminal failure proves no entitlement was created, so a later
+        # request may safely establish a fresh claim. Unknown outcomes remain
+        # pending and deliberately keep the claim.
+        conn.execute(
+            "DELETE FROM payment_claims WHERE receipt_id=?", (receipt_id,)
+        )
+    conn.commit()
+    return dict(conn.execute(
+        "SELECT * FROM receipts WHERE id=?", (receipt_id,)
+    ).fetchone())
+
+
+def _reconcile_agent_pending(conn, circle, settlement_scope):
+    """Refresh durable Circle claims before deciding whether to pay/reuse.
+
+    A retry never sends another transfer while a receipt is pending. If Circle
+    now reports COMPLETE, the same receipt becomes the reusable entitlement;
+    a terminal failure releases the claim for a later fresh attempt.
+    """
+    if settlement_scope != "live" or not hasattr(circle, "get_transaction"):
+        return
+    rows = conn.execute(
+        """SELECT * FROM receipts WHERE source='agent'
+           AND settlement_mode='pending' AND settlement_scope='live'
+           ORDER BY id"""
+    ).fetchall()
+    for raw in rows:
+        receipt = dict(raw)
+        if not receipt.get("transaction_id"):
+            continue
+        try:
+            current = circle.get_transaction(receipt["transaction_id"])
+            normalized = {
+                "mode": "live",
+                "state": current.get("state"),
+                "tx_hash": current.get("txHash") or receipt.get("tx_hash", ""),
+                "transaction_id": receipt["transaction_id"],
+                "blockchain": receipt.get("blockchain") or "ARC-TESTNET",
+                "payer_buyer_id": receipt.get("buyer") or "agent",
+            }
+            mode = circle.settlement_mode_for_transaction(normalized, "live")
+            if mode != "pending":
+                _update_agent_receipt(conn, receipt["id"], normalized, mode)
+        except Exception:
+            # An unavailable status lookup cannot prove either success or
+            # failure, so the durable pending claim remains authoritative.
+            continue
+
+
 def run_agent(query, budget_usdc, policy_input=None):
     """Execute one agent run end-to-end. Returns the full run dict."""
     policy = SpendingPolicy.from_input(budget_usdc, policy_input)
@@ -201,14 +369,28 @@ def run_agent(query, budget_usdc, policy_input=None):
 
     # The agent may reuse only articles it previously paid for itself. External
     # x402/unlock receipts are creator earnings, not this agent's private cache.
+    settled_mode = "live" if circle.mode == "live" else "mock"
+    _reconcile_agent_pending(conn, circle, circle.mode)
     paid_ids = {r[0] for r in cur.execute(
-        "SELECT DISTINCT article_id FROM receipts WHERE source='agent' AND run_id IS NOT NULL"
+        "SELECT DISTINCT article_id FROM receipts "
+        "WHERE source='agent' AND run_id IS NOT NULL "
+        "AND settlement_mode=? AND settlement_scope=?",
+        (settled_mode, circle.mode),
     ).fetchall()}
+    pending_by_article = {
+        r["article_id"]: dict(r)
+        for r in cur.execute(
+            "SELECT * FROM receipts WHERE source='agent' "
+            "AND settlement_mode='pending' AND settlement_scope=? ORDER BY id",
+            (circle.mode,),
+        ).fetchall()
+    }
 
     spent = 0.0
     bought = []
     covered = set()
     purchase_count = 0
+    pending_settlement = None
     for a in articles:
         aspects = _article_aspects(a, q_terms)
         coverage = _coverage(covered, q_terms, bool(bought))
@@ -233,6 +415,14 @@ def run_agent(query, budget_usdc, policy_input=None):
             )
             bought.append(a)
             covered |= aspects
+        elif a["id"] in pending_by_article:
+            pending_settlement = pending_by_article[a["id"]]
+            decision = "skip"
+            policy_rule = "settlement_pending"
+            reason = (
+                "a prior Circle transfer for this source is still pending; "
+                "the agent will not pay twice or unlock content before confirmation"
+            )
         elif bought and coverage >= policy.coverage_target:
             decision = "skip"
             policy_rule = "coverage_target"
@@ -275,38 +465,120 @@ def run_agent(query, budget_usdc, policy_input=None):
                     f"(already spent ${spent:.3f})"
                 )
         else:
-            tx = pay_from_buyer_pool(
-                circle,
-                a["payout_address"],
-                a["price_usdc"],
-                reference=f"obol-run-{run_id}-{a['id']}",
-                buyer_hint=f"agent-run-{run_id}",
-            )
-            spent += a["price_usdc"]
-            purchase_count += 1
-            budget_after = round(budget_usdc - spent, 6)
-            bought.append(a)
-            covered |= aspects
-            cur.execute("""INSERT INTO receipts(run_id, article_id, creator_id, amount_usdc,
-                           tx_hash, transaction_id, blockchain, settlement_mode,
-                           source, buyer, created_at)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                        (run_id, a["id"], a["creator_id"], a["price_usdc"],
-                         tx["tx_hash"], tx.get("transaction_id", ""), tx["blockchain"],
-                         tx.get("mode", circle.mode), "agent",
-                         tx.get("payer_buyer_id", "agent"), time.time()))
-            base = a["reason"] or "relevant to the query and within budget"
-            decision = "buy"
-            policy_rule = "value_purchase"
-            reason = (
-                f"{base}; authorized because relevance {a['relevance']:.2f} >= "
-                f"{policy.min_relevance:.2f}, price ${a['price_usdc']:.3f} fits the "
-                f"configured spending guardrails, and it adds "
-                f"{len(novelty)} new aspect{'s' if len(novelty) != 1 else ''}. "
-                f"Paid read {purchase_count}/{_purchase_limit(policy)}; "
-                f"${budget_after:.3f} remains including the protected "
-                f"${policy.reserve_usdc:.3f} reserve"
-            )
+            claim, owns_claim = _claim_agent_receipt(conn, run_id, a, circle.mode)
+            if not owns_claim:
+                if claim["settlement_mode"] == settled_mode:
+                    decision = "reuse"
+                    policy_rule = "cache_reuse"
+                    reason = (
+                        f"a concurrent or prior {circle.mode} receipt already paid "
+                        "for this source; reused it for $0.00 instead of paying twice"
+                    )
+                    bought.append(a)
+                    covered |= aspects
+                else:
+                    pending_settlement = claim
+                    decision = "skip"
+                    policy_rule = "settlement_pending"
+                    reason = (
+                        "another request already reserved this Circle payment; "
+                        "content remains locked and this run will not pay twice"
+                    )
+            else:
+                try:
+                    tx = pay_from_buyer_pool(
+                        circle,
+                        a["payout_address"],
+                        a["price_usdc"],
+                        reference=f"obol-run-{run_id}-{a['id']}",
+                        buyer_hint=f"agent-run-{run_id}",
+                    )
+                except WalletPoolExhausted as exc:
+                    tx = {"state": "FAILED", "blockchain": "ARC-TESTNET"}
+                    _update_agent_receipt(conn, claim["id"], tx, "failed")
+                    pending_settlement = {
+                        **tx,
+                        "settlement_mode": "failed",
+                        "error": str(exc),
+                    }
+                    decision = "skip"
+                    policy_rule = "settlement_failed"
+                    reason = f"no funded payer wallet was available: {str(exc)[:240]}"
+                except SettlementOutcomeUnknown as exc:
+                    spent += a["price_usdc"]
+                    budget_after = round(budget_usdc - spent, 6)
+                    pending_settlement = {
+                        **claim,
+                        "settlement_mode": "pending",
+                        "error": str(exc),
+                    }
+                    decision = "skip"
+                    policy_rule = "settlement_pending"
+                    reason = (
+                        "Circle transfer outcome is unknown. The amount is reserved, "
+                        "the durable claim remains pending, and no retry or content "
+                        "release is allowed"
+                    )
+                except Exception as exc:
+                    spent += a["price_usdc"]
+                    budget_after = round(budget_usdc - spent, 6)
+                    pending_settlement = {
+                        **claim,
+                        "settlement_mode": "pending",
+                        "error": str(exc),
+                    }
+                    decision = "skip"
+                    policy_rule = "settlement_pending"
+                    reason = (
+                        "payment outcome could not be proven. The claim remains "
+                        "pending to prevent a duplicate transfer and content stays locked"
+                    )
+                else:
+                    settlement_mode = circle.settlement_mode_for_transaction(
+                        tx, circle.mode
+                    )
+                    _update_agent_receipt(
+                        conn, claim["id"], tx, settlement_mode
+                    )
+                    if settlement_mode in {"pending", "failed"}:
+                        if settlement_mode == "pending":
+                            spent += a["price_usdc"]
+                            budget_after = round(budget_usdc - spent, 6)
+                        pending_settlement = {
+                            **tx,
+                            "settlement_mode": settlement_mode,
+                        }
+                        decision = "skip"
+                        policy_rule = f"settlement_{settlement_mode}"
+                        if settlement_mode == "pending":
+                            reason = (
+                                "Circle accepted the transfer but has not reported COMPLETE. "
+                                "The amount is reserved, the transaction is recorded, and "
+                                "content remains locked to prevent duplicate payment or early access"
+                            )
+                        else:
+                            reason = (
+                                f"Circle reported {tx.get('state', 'FAILED')}; the failed "
+                                "transaction is recorded and no content is unlocked"
+                            )
+                    else:
+                        spent += a["price_usdc"]
+                        budget_after = round(budget_usdc - spent, 6)
+                        purchase_count += 1
+                        bought.append(a)
+                        covered |= aspects
+                        base = a["reason"] or "relevant to the query and within budget"
+                        decision = "buy"
+                        policy_rule = "value_purchase"
+                        reason = (
+                            f"{base}; authorized because relevance {a['relevance']:.2f} >= "
+                            f"{policy.min_relevance:.2f}, price ${a['price_usdc']:.3f} fits the "
+                            f"configured spending guardrails, and it adds "
+                            f"{len(novelty)} new aspect{'s' if len(novelty) != 1 else ''}. "
+                            f"Paid read {purchase_count}/{_purchase_limit(policy)}; "
+                            f"${budget_after:.3f} remains including the protected "
+                            f"${policy.reserve_usdc:.3f} reserve"
+                        )
         cur.execute("""INSERT INTO decisions(
                        run_id, article_id, decision, reason, policy_rule,
                        relevance, price_usdc, budget_before_usdc,
@@ -315,10 +587,33 @@ def run_agent(query, budget_usdc, policy_input=None):
                     (run_id, a["id"], decision, reason, policy_rule,
                      a["relevance"], a["price_usdc"], budget_before,
                      budget_after, time.time()))
+        if pending_settlement is not None:
+            break
 
     coverage = _coverage(covered, q_terms, bool(bought))
-    answer = _synthesize(query, bought, coverage)
-    if bought and coverage >= policy.coverage_target:
+    if pending_settlement is not None:
+        if pending_settlement.get("settlement_mode") == "failed":
+            answer = "Circle reported a failed transfer. No paid content was released."
+            stop_rule = "settlement_failed"
+            stop_reason = "Stopped because Circle reported a terminal transfer failure."
+            run_status = "error"
+        else:
+            answer = (
+                "A Circle transfer was submitted but is not COMPLETE yet. No paid "
+                "content was released; retry after the recorded transaction settles."
+            )
+            stop_rule = "settlement_pending"
+            stop_reason = (
+                "Stopped because a submitted Circle transfer is pending. The amount "
+                "is reserved and the transaction is persisted to prevent duplicate payment."
+            )
+            run_status = "pending"
+    else:
+        answer = _synthesize(query, bought, coverage)
+        run_status = "done"
+    if pending_settlement is not None:
+        pass
+    elif bought and coverage >= policy.coverage_target:
         stop_rule = "coverage_target"
         stop_reason = (
             f"Stopped with {coverage:.0%} query coverage, meeting the "
@@ -344,7 +639,7 @@ def run_agent(query, budget_usdc, policy_input=None):
         )
     cur.execute("""UPDATE agent_runs SET status=?, answer=?, total_spent=?,
                    coverage=?, stop_rule=?, stop_reason=?, finished_at=? WHERE id=?""",
-                ("done", answer, round(spent, 6), round(coverage, 4),
+                (run_status, answer, round(spent, 6), round(coverage, 4),
                  stop_rule, stop_reason, time.time(), run_id))
     conn.commit()
     conn.close()
@@ -421,12 +716,15 @@ def get_run(run_id):
     receipt_modes = {
         receipt.get("settlement_mode")
         for receipt in receipts
-        if receipt.get("settlement_mode") in {"live", "mock"}
+        if receipt.get("settlement_mode") in {"live", "mock", "pending", "failed", "legacy"}
     }
     run["settlement_mode"] = (
-        "live" if receipt_modes == {"live"}
+        "pending" if run.get("status") == "pending" or "pending" in receipt_modes
+        else "failed" if "failed" in receipt_modes
+        else "live" if receipt_modes == {"live"}
         else "mock" if "mock" in receipt_modes
-        else CircleService().mode
+        else "legacy" if "legacy" in receipt_modes
+        else "none"
     )
     return run
 

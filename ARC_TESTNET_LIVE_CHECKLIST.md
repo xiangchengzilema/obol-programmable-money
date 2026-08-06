@@ -57,8 +57,10 @@ should report:
 ## Safety
 
 - Keep `OBOL_FORCE_MOCK=1` during automated tests and persona evaluation.
+- Set a long random `OBOL_LIVE_API_TOKEN` before starting any private live
+  instance. Send it only in `Authorization: Bearer <token>` for POST requests;
+  the public Render demo remains forced mock and needs no token.
 - Do not commit `backend/.env`, databases, wallet pools, logs, or recovery files.
 - Use very small testnet amounts.
 - Never claim seeded or evaluator-generated activity as organic traction.
 - If live settlement is unavailable, describe the mock/live boundary honestly.
-

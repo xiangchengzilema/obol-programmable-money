@@ -10,7 +10,8 @@ Use this guide to record the final public demo video. The target runtime is
 2. Wait up to one minute if the free Render service is waking.
 3. Close personal tabs and hide the bookmarks bar.
 4. Confirm the page says **Public demo / Mock settlement**. This is intentional:
-   do not imply that a mock receipt is an on-chain payment.
+   the interactive run stays simulated, while the separate **Fresh evidence**
+   panel exposes the independently verified Arc Testnet payment.
 5. Prepare these two public links in a text file:
    - Demo: <https://obol-programmable-money.onrender.com>
    - Code: <https://github.com/xiangchengzilema/obol-programmable-money>
@@ -28,7 +29,7 @@ Use this guide to record the final public demo video. The target runtime is
 | 1:12–1:37 | Slowly scroll through the decision audit. Pause on at least one **buy**, one **skip**, and the final **stop** row. | “This trace is the core of Obol. Payment is not a scripted final step; the spending constraint changes the research plan. Every row records the rule that fired and the balance before and after the decision.” |
 | 1:37–1:57 | Show the receipt and settlement-mode label. If the run displays `$0.010 spent`, `$0.040 remaining`, and `$0.005 reserve`, keep them visible. If the numbers differ, describe the numbers actually shown. | “The submitted public demo is deliberately running in clearly labelled mock mode, so no secret wallet credentials are exposed. The receipt schema still records the creator, article, amount, decision rationale, and settlement mode. We do not present mock hashes as on-chain proof.” |
 | 1:57–2:25 | Click **x402**. Choose an article, click **Get 402 challenge**, pause on the HTTP 402 response, then click **Pay and unlock** and pause on the returned content and receipt. | “Other agents do not need this website. They can call the native agent API, or use this x402-style flow. An unpaid request receives a machine-readable HTTP 402 challenge; an authorized retry receives the content and a resource-bound receipt.” |
-| 2:25–2:48 | Show slide 6 of `Obol_Arc_Programmable_Money_Deck.pptx`, or the repository README if switching to PowerPoint would slow the recording. Keep the four verified results visible. | “Obol began in an earlier hackathon, and we disclose that openly. For this Arc iteration we added request-scoped spending guardrails, immutable policy and stop audits, a fail-closed public deployment boundary, and a judge-ready interface. Twenty-six backend tests pass, and the public API and x402 flow are verified.” |
+| 2:25–2:48 | Return to the home page, pause on **Fresh evidence**, and click **Verify again**. Keep the strict-match status, Arc block, transaction hash, and Arcscan button visible. | “The anonymous playground never receives wallet secrets, but this separate evidence panel binds the submitted run to a real completed Arc Testnet USDC transfer. The server verifies the transaction hash, payer, token contract, recipient, amount, and block. Forty-six backend tests pass.” |
 | 2:48–2:58 | Return to the hero or show slide 7 with the demo and repository URLs. | “Obol makes every paid AI read intentional, inspectable, and creator-aligned. It is programmable money inside the agent’s reasoning loop.” |
 
 ## Prepared Agent Console values

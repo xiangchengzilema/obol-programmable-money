@@ -26,6 +26,8 @@ import enrich_demo
 BUYERS_FILE = Path(__file__).with_name("demo_buyer_wallets.json")
 RUN_LOG = Path(__file__).with_name("usage_simulator_log.jsonl")
 DAEMON_STATE = Path(__file__).with_name("usage_daemon_state.json")
+SOURCE = "usage-sim"
+CLAIM_TYPE = "usage"
 
 TOPICS = [
     ("Agent payment routing", "agents,payments,routing,circle"),
@@ -212,11 +214,120 @@ def choose_article(conn, buyer):
     return random.choices(window, weights=weights, k=1)[0]
 
 
-def receipt_exists(conn, buyer_id, article_id):
+def _receipt_is_settled(receipt, settlement_scope):
+    return bool(receipt) and receipt.get("settlement_mode") == settlement_scope
+
+
+def receipt_exists(conn, buyer_id, article_id, settlement_scope="mock"):
+    """Return true only for a settled entitlement in the requested domain."""
+    expected_mode = "live" if settlement_scope == "live" else "mock"
     return conn.execute(
-        "SELECT 1 FROM receipts WHERE buyer=? AND article_id=?",
-        (buyer_id, article_id),
+        """SELECT 1 FROM receipts
+           WHERE buyer=? AND article_id=? AND source=?
+             AND settlement_scope=? AND settlement_mode=?""",
+        (buyer_id, article_id, SOURCE, settlement_scope, expected_mode),
     ).fetchone() is not None
+
+
+def _claim_payment(conn, article, buyer_id, settlement_scope):
+    """Persist a payment intent before contacting Circle.
+
+    The claim is the crash-safe/idempotent boundary.  If Circle accepts a
+    transfer but the process loses the response, the pending row remains and a
+    later invocation will not issue another transfer.
+    """
+    now = time.time()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        claim = conn.execute(
+            """SELECT r.* FROM payment_claims p
+               JOIN receipts r ON r.id=p.receipt_id
+               WHERE p.claim_type=? AND p.article_id=? AND p.buyer_key=?
+                 AND p.settlement_scope=?""",
+            (CLAIM_TYPE, article["id"], buyer_id, settlement_scope),
+        ).fetchone()
+        if claim:
+            conn.commit()
+            return dict(claim), False
+
+        # Adopt receipts made before payment_claims existed so upgrades remain
+        # idempotent and do not repay historical activity.
+        existing = conn.execute(
+            """SELECT * FROM receipts
+               WHERE article_id=? AND creator_id=? AND buyer=? AND source=?
+                 AND settlement_scope=? AND settlement_mode<>'legacy'
+               ORDER BY CASE WHEN settlement_mode=? THEN 0
+                              WHEN settlement_mode='pending' THEN 1
+                              ELSE 2 END, id DESC LIMIT 1""",
+            (
+                article["id"], article["creator_id"], buyer_id, SOURCE,
+                settlement_scope, settlement_scope,
+            ),
+        ).fetchone()
+        if existing:
+            receipt_id = existing["id"]
+        else:
+            cur = conn.execute(
+                """INSERT INTO receipts(run_id, article_id, creator_id, amount_usdc,
+                   tx_hash, transaction_id, blockchain, settlement_mode,
+                   settlement_scope, source, buyer, created_at)
+                   VALUES(NULL,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    article["id"], article["creator_id"], article["price_usdc"],
+                    "", "", "ARC-TESTNET", "pending", settlement_scope,
+                    SOURCE, buyer_id, now,
+                ),
+            )
+            receipt_id = cur.lastrowid
+
+        conn.execute(
+            """INSERT OR IGNORE INTO payment_claims(
+               claim_type, article_id, buyer_key, settlement_scope,
+               receipt_id, created_at, updated_at)
+               VALUES(?,?,?,?,?,?,?)""",
+            (
+                CLAIM_TYPE, article["id"], buyer_id, settlement_scope,
+                receipt_id, now, now,
+            ),
+        )
+        claim = conn.execute(
+            """SELECT r.* FROM payment_claims p
+               JOIN receipts r ON r.id=p.receipt_id
+               WHERE p.claim_type=? AND p.article_id=? AND p.buyer_key=?
+                 AND p.settlement_scope=?""",
+            (CLAIM_TYPE, article["id"], buyer_id, settlement_scope),
+        ).fetchone()
+        conn.commit()
+        return dict(claim), existing is None and claim["id"] == receipt_id
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def _update_claim(conn, receipt_id, settlement_mode, tx=None):
+    tx = tx if isinstance(tx, dict) else {}
+    conn.execute(
+        """UPDATE receipts
+           SET tx_hash=?, transaction_id=?, blockchain=?, settlement_mode=?
+           WHERE id=?""",
+        (
+            tx.get("tx_hash", ""),
+            tx.get("transaction_id", ""),
+            tx.get("blockchain", "ARC-TESTNET"),
+            settlement_mode,
+            receipt_id,
+        ),
+    )
+    conn.execute(
+        "UPDATE payment_claims SET updated_at=? WHERE receipt_id=?",
+        (time.time(), receipt_id),
+    )
+    conn.commit()
+
+
+def _definitely_insufficient(exc):
+    message = str(exc).lower()
+    return "insufficient" in message or "155258" in message
 
 
 def _buyer_number(buyer):
@@ -277,16 +388,40 @@ def run_purchases(count, buyers_count, live=False, delay_min=0, delay_max=0,
         raise SystemExit("Live purchases requested, but Circle is not configured.")
     conn = get_db()
     results = []
+    settlement_scope = "live" if live else "mock"
     for i in range(count):
         buyer = random.choice(buyers)
         article = choose_article(conn, buyer)
-        # Some repeat visits should reuse a prior payment instead of double-paying.
-        if receipt_exists(conn, buyer["buyer_id"], article["id"]) and random.random() < 0.8:
+        # A settled entitlement is always reused.  Pending/failed rows are never
+        # authorization, and the atomic claim below prevents them being repaid.
+        if receipt_exists(conn, buyer["buyer_id"], article["id"], settlement_scope):
             event = {
                 "event": "reuse",
+                "settlement_mode": settlement_scope,
                 "buyer": buyer["buyer_id"],
                 "article_id": article["id"],
                 "creator": article["creator_name"],
+            }
+            _log(event)
+            results.append(event)
+            continue
+        receipt, owned = _claim_payment(
+            conn, article, buyer["buyer_id"], settlement_scope
+        )
+        if not owned:
+            mode = receipt.get("settlement_mode", "pending")
+            event = {
+                "event": "reuse" if _receipt_is_settled(receipt, settlement_scope)
+                         else f"settlement_{mode}",
+                "settlement_mode": mode,
+                "live": live,
+                "buyer": buyer["buyer_id"],
+                "buyer_wallet_id": buyer["wallet_id"],
+                "article_id": article["id"],
+                "creator": article["creator_name"],
+                "amount_usdc": _money(article["price_usdc"]),
+                "tx_hash": receipt.get("tx_hash", ""),
+                "transaction_id": receipt.get("transaction_id", ""),
             }
             _log(event)
             results.append(event)
@@ -305,32 +440,18 @@ def run_purchases(count, buyers_count, live=False, delay_min=0, delay_max=0,
                     "transaction_id": f"dry-{int(time.time()*1000)}-{i}",
                     "blockchain": "ARC-TESTNET",
                     "state": "COMPLETE",
+                    "mode": "mock",
                 }
-            if tx.get("state") in {"FAILED", "CANCELLED", "DENIED"}:
-                raise RuntimeError(f"Circle transaction {tx.get('transaction_id', '')} ended in {tx.get('state')}")
-            if live and not tx.get("tx_hash"):
-                raise RuntimeError(
-                    f"Circle transaction {tx.get('transaction_id', '')} has no Arc txHash yet; not recording paid read"
-                )
-            conn.execute(
-                """INSERT INTO receipts(run_id, article_id, creator_id, amount_usdc,
-                   tx_hash, transaction_id, blockchain, source, buyer, created_at)
-                   VALUES(NULL,?,?,?,?,?,?,?,?,?)""",
-                (
-                    article["id"],
-                    article["creator_id"],
-                    article["price_usdc"],
-                    tx.get("tx_hash", ""),
-                    tx.get("transaction_id", ""),
-                    tx.get("blockchain", "ARC-TESTNET"),
-                    "usage-sim",
-                    buyer["buyer_id"],
-                    time.time(),
-                ),
+            settlement_mode = circle.settlement_mode_for_transaction(
+                tx, settlement_scope
             )
-            conn.commit()
+            _update_claim(conn, receipt["id"], settlement_mode, tx)
             event = {
-                "event": "paid_read",
+                "event": (
+                    "paid_read" if settlement_mode in {"live", "mock"}
+                    else f"settlement_{settlement_mode}"
+                ),
+                "settlement_mode": settlement_mode,
                 "live": live,
                 "buyer": buyer["buyer_id"],
                 "buyer_wallet_id": buyer["wallet_id"],
@@ -339,10 +460,18 @@ def run_purchases(count, buyers_count, live=False, delay_min=0, delay_max=0,
                 "amount_usdc": _money(article["price_usdc"]),
                 "tx_hash": tx.get("tx_hash", ""),
                 "transaction_id": tx.get("transaction_id", ""),
+                "state": tx.get("state", ""),
             }
         except Exception as exc:
+            # The intent already exists.  Only a definite pre-chain failure may
+            # become failed; every ambiguous outcome stays pending and blocks a
+            # second transfer on rerun.
+            settlement_mode = "failed" if _definitely_insufficient(exc) else "pending"
+            if settlement_mode == "failed":
+                _update_claim(conn, receipt["id"], "failed")
             event = {
-                "event": "error",
+                "event": f"settlement_{settlement_mode}",
+                "settlement_mode": settlement_mode,
                 "live": live,
                 "buyer": buyer["buyer_id"],
                 "article_id": article["id"],
@@ -407,7 +536,9 @@ def run_daemon(duration_hours, interval_min, interval_max, max_purchases,
             paid += 1
         elif event.get("event") == "reuse":
             reused += 1
-        elif event.get("event") == "error":
+        elif event.get("event") in {
+            "error", "settlement_pending", "settlement_failed", "settlement_legacy"
+        }:
             errors += 1
             message = str(event.get("error", "")).lower()
             if "insufficient token balance" in message:
@@ -463,9 +594,9 @@ def reconcile_receipts(limit=100):
         raise SystemExit("Live reconciliation requested, but Circle is not configured.")
     conn = get_db()
     rows = [dict(r) for r in conn.execute("""
-        SELECT id, transaction_id, tx_hash FROM receipts
+        SELECT id, transaction_id, tx_hash, settlement_mode FROM receipts
         WHERE transaction_id IS NOT NULL AND transaction_id <> ''
-          AND (tx_hash IS NULL OR tx_hash = '')
+          AND settlement_scope='live' AND settlement_mode='pending'
         ORDER BY id DESC LIMIT ?
     """, (limit,)).fetchall()]
     results = []
@@ -474,16 +605,28 @@ def reconcile_receipts(limit=100):
             tx = circle.get_transaction(row["transaction_id"])
             tx_hash = tx.get("txHash", "")
             state = tx.get("state", "")
-            if tx_hash:
-                conn.execute("UPDATE receipts SET tx_hash=? WHERE id=?", (tx_hash, row["id"]))
-                conn.commit()
+            settlement_mode = circle.settlement_mode_for_transaction(
+                {"mode": "live", "state": state, "tx_hash": tx_hash}, "live"
+            )
+            conn.execute(
+                "UPDATE receipts SET tx_hash=?, settlement_mode=? WHERE id=?",
+                (tx_hash, settlement_mode, row["id"]),
+            )
+            conn.execute(
+                "UPDATE payment_claims SET updated_at=? WHERE receipt_id=?",
+                (time.time(), row["id"]),
+            )
+            conn.commit()
             event = {
                 "event": "receipt_reconciled",
                 "receipt_id": row["id"],
                 "transaction_id": row["transaction_id"],
                 "state": state,
                 "tx_hash": tx_hash,
-                "updated": bool(tx_hash),
+                "settlement_mode": settlement_mode,
+                "updated": (
+                    bool(tx_hash) or settlement_mode != row["settlement_mode"]
+                ),
             }
         except Exception as exc:
             event = {
@@ -502,10 +645,37 @@ def summarize():
     conn = get_db()
     rows = [dict(r) for r in conn.execute("""
         SELECT c.name,
-               ROUND(COALESCE(SUM(r.amount_usdc), 0), 4) AS earned_usdc,
-               COUNT(r.id) AS receipts,
-               COUNT(DISTINCT r.buyer) AS buyers,
-               SUM(CASE WHEN r.transaction_id IS NOT NULL AND r.transaction_id <> '' THEN 1 ELSE 0 END) AS circle_receipts
+               ROUND(COALESCE(SUM(CASE WHEN (r.settlement_mode='live' AND r.settlement_scope='live')
+                    OR (r.settlement_mode='mock' AND r.settlement_scope='mock')
+                    THEN r.amount_usdc ELSE 0 END), 0), 4) AS earned_usdc,
+               COUNT(CASE WHEN (r.settlement_mode='live' AND r.settlement_scope='live')
+                    OR (r.settlement_mode='mock' AND r.settlement_scope='mock')
+                    THEN 1 END) AS receipts,
+               COUNT(DISTINCT CASE WHEN (r.settlement_mode='live' AND r.settlement_scope='live')
+                    OR (r.settlement_mode='mock' AND r.settlement_scope='mock')
+                    THEN r.buyer END) AS buyers,
+               COUNT(CASE WHEN r.settlement_mode='live' AND r.settlement_scope='live'
+                    AND r.transaction_id IS NOT NULL AND r.transaction_id<>''
+                    THEN 1 END) AS circle_receipts,
+               ROUND(COALESCE(SUM(CASE WHEN r.settlement_mode='live'
+                    AND r.settlement_scope='live'
+                    THEN r.amount_usdc ELSE 0 END), 0), 4) AS live_earned_usdc,
+               ROUND(COALESCE(SUM(CASE WHEN r.settlement_mode='mock'
+                    AND r.settlement_scope='mock'
+                    THEN r.amount_usdc ELSE 0 END), 0), 4) AS mock_earned_usdc,
+               COUNT(CASE WHEN r.settlement_mode='pending'
+                    AND r.settlement_scope IN ('live','mock') THEN 1 END) AS pending_receipts,
+               ROUND(COALESCE(SUM(CASE WHEN r.settlement_mode='pending'
+                    AND r.settlement_scope IN ('live','mock')
+                    THEN r.amount_usdc ELSE 0 END), 0), 4) AS pending_usdc,
+               COUNT(CASE WHEN r.settlement_mode IN ('pending','failed','legacy')
+                    OR (r.settlement_mode='live' AND r.settlement_scope<>'live')
+                    OR (r.settlement_mode='mock' AND r.settlement_scope<>'mock')
+                    THEN 1 END) AS unverified_receipts,
+               ROUND(COALESCE(SUM(CASE WHEN r.settlement_mode IN ('pending','failed','legacy')
+                    OR (r.settlement_mode='live' AND r.settlement_scope<>'live')
+                    OR (r.settlement_mode='mock' AND r.settlement_scope<>'mock')
+                    THEN r.amount_usdc ELSE 0 END), 0), 4) AS unverified_usdc
         FROM creators c LEFT JOIN receipts r ON r.creator_id=c.id
         GROUP BY c.id ORDER BY earned_usdc DESC
     """).fetchall()]

@@ -70,8 +70,26 @@ The browser console exposes these guardrails and renders the resulting policy
 audit. We also added a production Gunicorn entrypoint and Railway configuration.
 The public WSGI deployment is fail-closed to mock settlement so a judge-facing
 anonymous service cannot accidentally receive Circle wallet credentials. The
-current automated verification result is 26 backend tests passing plus a clean
+current automated verification result is 46 backend tests passing plus a clean
 JavaScript syntax check.
+
+## Final build update — 6 August 2026
+
+The current repository generated a fresh policy-constrained evaluation payment:
+the agent received a $0.050 budget, bought one $0.010 source, reached 67%
+coverage, stopped on its coverage target, and preserved $0.040. Circle marked
+transaction `d7e70603-cd6f-5c8c-96e8-7aacc4c10892` as `COMPLETE`; Arc Testnet
+confirmed the receipt at block `55,584,226`.
+
+Public proof:
+https://testnet.arcscan.app/tx/0x03a7e7c96283b545798d101d46a4fb48865bcb069fdba2311352fe9e56b92809
+
+The public demo now shows this evidence in a separate verified panel while its
+interactive playground remains safely mock-only. A server-side verifier checks
+the Arc chain ID and committed receipt fields through a primary RPC with fallback, so the
+judge flow does not depend on browser-to-RPC CORS. We also repaired cold-start
+demo execution, enabled x402 payment headers in CORS preflight, and made every
+receipt utility persist an explicit settlement mode.
 
 ## Track fit
 

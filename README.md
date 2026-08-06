@@ -115,10 +115,22 @@ Runs with zero config in mock mode. Add `OPENAI_API_KEY` for smarter decisions.
 When `CIRCLE_API_KEY`, `CIRCLE_ENTITY_SECRET`, and `CIRCLE_AGENT_WALLET_ID` are
 present, Obol uses live Circle Wallets on Arc Testnet.
 
-The earlier Obol iteration completed live agent payments on Arc Testnet. This
-iteration will publish refreshed, independently reproducible testnet evidence
-before final submission. All seeded activity and testnet transfers are labelled
-as **demo/evaluation data**, not organic traction.
+This iteration completed a fresh live evaluation payment on Arc Testnet on
+2026-08-06. A policy-constrained agent received a $0.050 budget, bought one
+$0.010 source, stopped at 67% coverage, and preserved $0.040. Circle reported
+the transfer `COMPLETE`, and two Arc RPC endpoints independently returned a
+successful receipt at block `55,584,226`.
+
+- [Arcscan transaction](https://testnet.arcscan.app/tx/0x03a7e7c96283b545798d101d46a4fb48865bcb069fdba2311352fe9e56b92809)
+- [Committed non-secret evidence](evidence/arc-testnet-agent-run-20260806.json)
+- `GET /api/evidence/latest` returns the judge-readable evidence bundle.
+- `GET /api/arc/transactions/:txHash/verify` re-checks a transaction through a
+  server-side Arc RPC verifier, avoiding browser CORS dependency.
+
+The public Render playground remains fail-closed in mock mode; it displays the
+separate verified transfer without receiving Circle credentials. All seeded
+activity and testnet transfers are labelled as **demo/evaluation data**, not
+organic traction or production revenue.
 
 Check readiness at `/api/settlement/status`; see `ARC_TESTNET_LIVE_CHECKLIST.md`.
 
@@ -140,6 +152,11 @@ Open `http://localhost:5001`, run the Agent Console, then visit Creator Studio
 and x402. The demo reset button reseeds the local database so recordings start
 with fresh buy receipts instead of cache reuses. In live mode, reset requires an
 extra confirmation if local live receipts already exist.
+
+Private live mode also requires `OBOL_LIVE_API_TOKEN` for every state-changing
+API call. Pass it as `Authorization: Bearer <token>` (or set it for the current
+browser tab with `obolSetLiveApiToken("...")`). The hosted judge playground is
+forced mock and never receives Circle or wallet secrets.
 
 ### 5-persona evaluation
 
@@ -175,7 +192,7 @@ cd backend && python -m pytest -q test_obol.py -p no:cacheprovider
 cd .. && node --check frontend/app.js
 ```
 
-Current result: **26 backend tests passing**, plus JavaScript syntax validation.
+Current result: **46 backend tests passing**, plus JavaScript syntax validation.
 
 See `PROGRAMMABLE_MONEY_SUBMISSION.md` for checkpoint copy,
 `FINAL_SUBMISSION_DRAFT.md` for the final form/video/deck source, and

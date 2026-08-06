@@ -12,6 +12,8 @@ pytest-cache-files-*/
 backend/.env
 backend-server.*.log
 backend/*.db
+backend/*.db-shm
+backend/*.db-wal
 backend/*.log
 backend/logs/
 backend/backups/

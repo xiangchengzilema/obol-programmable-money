@@ -62,10 +62,23 @@ CREATE TABLE IF NOT EXISTS receipts (
   tx_hash     TEXT,
   transaction_id TEXT,
   blockchain  TEXT,
-  settlement_mode TEXT NOT NULL DEFAULT 'legacy', -- live | mock | legacy
+  settlement_mode TEXT NOT NULL DEFAULT 'legacy', -- live | mock | pending | failed | legacy
+  settlement_scope TEXT NOT NULL DEFAULT 'legacy', -- live | mock | legacy
   source      TEXT NOT NULL DEFAULT 'agent', -- agent | x402 | unlock
   buyer       TEXT,                          -- external buyer id/address (x402)
   created_at  REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS payment_claims (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  claim_type        TEXT NOT NULL,              -- agent | unlock
+  article_id        INTEGER NOT NULL,
+  buyer_key         TEXT NOT NULL,
+  settlement_scope  TEXT NOT NULL,              -- live | mock
+  receipt_id        INTEGER NOT NULL,
+  created_at        REAL NOT NULL,
+  updated_at        REAL NOT NULL,
+  UNIQUE(claim_type, article_id, buyer_key, settlement_scope),
+  FOREIGN KEY(receipt_id) REFERENCES receipts(id) ON DELETE CASCADE
 );
 """
 
@@ -75,6 +88,7 @@ _MIGRATIONS = [
     ("receipts", "buyer", "TEXT"),
     ("receipts", "transaction_id", "TEXT"),
     ("receipts", "settlement_mode", "TEXT NOT NULL DEFAULT 'legacy'"),
+    ("receipts", "settlement_scope", "TEXT NOT NULL DEFAULT 'legacy'"),
     ("agent_runs", "plan", "TEXT"),
     ("agent_runs", "coverage", "REAL NOT NULL DEFAULT 0"),
     ("agent_runs", "policy_json", "TEXT"),
@@ -94,11 +108,38 @@ def _migrate(conn):
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
             except Exception:
                 pass
+    conn.execute("""
+        UPDATE receipts SET settlement_scope = CASE
+          WHEN settlement_mode='mock' THEN 'mock'
+          WHEN settlement_mode IN ('live','pending','failed') THEN 'live'
+          ELSE 'legacy'
+        END
+        WHERE settlement_scope IS NULL OR settlement_scope='legacy'
+    """)
+    # Claims live in their own table.  Do not rewrite historical receipt truth
+    # merely to make an entitlement index unique: an old pending row may be
+    # followed by a later COMPLETE receipt, and the COMPLETE proof must remain
+    # authoritative.  Drop the short-lived receipt indexes from early builds.
+    conn.execute("DROP INDEX IF EXISTS idx_unlock_claim")
+    conn.execute("DROP INDEX IF EXISTS idx_agent_claim")
+    conn.execute("""
+        DELETE FROM payment_claims
+        WHERE receipt_id NOT IN (SELECT id FROM receipts)
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_receipt_entitlement_lookup
+        ON receipts(article_id, source, settlement_scope, settlement_mode)
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_payment_claim_receipt
+        ON payment_claims(receipt_id)
+    """)
 
 
 def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=10000")
     return conn
 

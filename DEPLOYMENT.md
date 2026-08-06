@@ -13,6 +13,17 @@ WSGI entrypoint defaults `OBOL_PUBLIC_DEMO=1`, which forces
 `OBOL_FORCE_MOCK=1` before the application imports. Do not add Circle, OpenAI,
 or wallet credentials to the public Railway service.
 
+Private live deployments must also set a long random `OBOL_LIVE_API_TOKEN`.
+Every state-changing `/api/*` request then requires
+`Authorization: Bearer <token>`. The browser helper keeps an operator token in
+tab-scoped `sessionStorage` only:
+
+```js
+obolSetLiveApiToken("your-runtime-token")
+```
+
+Never enable anonymous live mutations on an internet-facing service.
+
 Live Arc Testnet evidence is generated only from the local, ignored
 `backend/.env` and then documented with non-secret transaction proof. This
 keeps an anonymous website from being able to spend from a testnet wallet.

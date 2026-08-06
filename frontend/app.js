@@ -35,6 +35,7 @@ let dashboardPoll = null;
 let paymentBubbleTimer = null;
 let purchasePopoverAutoTimer = null;
 let purchasePopoverHideTimer = null;
+let primeDemoPromise = null;
 
 function setActiveApi(base) {
   API = base.replace(/\/$/, "");
@@ -54,7 +55,7 @@ async function api(path, opts = {}) {
   for (const base of candidates) {
     tried.push(base);
     try {
-      const r = await fetch(base + path, opts);
+      const r = await fetch(base + path, withLiveAuth(path, opts));
       if (!r.ok) {
         let msg = `${r.status} ${r.statusText}`;
         try { msg = (await r.json()).error || msg; } catch (_) {}
@@ -77,7 +78,7 @@ async function rawApi(path, opts = {}) {
   for (const base of candidates) {
     tried.push(base);
     try {
-      const r = await fetch(base + path, opts);
+      const r = await fetch(base + path, withLiveAuth(path, opts));
       let body = null;
       try { body = await r.json(); } catch (_) {}
       if (base !== API) setActiveApi(base);
@@ -94,29 +95,88 @@ function money(n, d = 4) {
   return `$${fmt(n, d)}`;
 }
 
+function withLiveAuth(path, opts = {}) {
+  const next = { ...opts };
+  const headers = new Headers(opts.headers || {});
+  const token = sessionStorage.getItem("obol_live_api_token");
+  const method = String(opts.method || "GET").toUpperCase();
+  const needsLiveAuth = path.startsWith("/api/")
+    && !["GET", "HEAD", "OPTIONS"].includes(method);
+  if (token && needsLiveAuth && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  next.headers = headers;
+  return next;
+}
+
+// Live deployments deliberately require an operator token. Keep it only in
+// this tab's session storage; public mock deployments do not need one.
+window.obolSetLiveApiToken = (token) => {
+  if (token) sessionStorage.setItem("obol_live_api_token", String(token));
+  else sessionStorage.removeItem("obol_live_api_token");
+};
+
+function withTimeout(promise, timeoutMs, message = "Request timed out") {
+  let timer = null;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 function isLiveReceipt(receipt) {
   return receipt?.settlement_mode === "live"
     && receipt?.blockchain === "ARC-TESTNET"
     && Boolean(receipt?.tx_hash);
 }
 
+function receiptMode(receipt) {
+  const mode = receipt?.settlement_mode;
+  return ["live", "mock", "pending", "failed", "legacy"].includes(mode)
+    ? mode
+    : "legacy";
+}
+
+function isMockReceipt(receipt) {
+  return receiptMode(receipt) === "mock";
+}
+
+function isPendingReceipt(receipt) {
+  return receiptMode(receipt) === "pending";
+}
+
+function isFailedReceipt(receipt) {
+  return receiptMode(receipt) === "failed";
+}
+
+function isSettledReceipt(receipt) {
+  return isLiveReceipt(receipt) || isMockReceipt(receipt);
+}
+
 function receiptModeLabel(receipt) {
-  return isLiveReceipt(receipt) ? "live" : "simulated";
+  if (isLiveReceipt(receipt)) return "live confirmed";
+  if (isMockReceipt(receipt)) return "simulated / no funds moved";
+  if (isPendingReceipt(receipt)) return "pending / content locked";
+  if (isFailedReceipt(receipt)) return "failed / unpaid";
+  return "unverified legacy receipt";
 }
 
 function ledgerSummary(ledger = []) {
   const live = ledger.filter(isLiveReceipt);
-  const demo = ledger.filter((r) => !isLiveReceipt(r));
+  const demo = ledger.filter(isMockReceipt);
+  const unverified = ledger.filter((r) => !isSettledReceipt(r));
   const creators = new Set(live.map((r) => r.creator_name).filter(Boolean));
   const total = live.reduce((sum, r) => sum + Number(r.amount_usdc || 0), 0);
   const top = [...live].sort((a, b) => Number(b.amount_usdc || 0) - Number(a.amount_usdc || 0))[0] || null;
-  return { live, demo, creators, total, top };
+  return { live, demo, unverified, creators, total, top };
 }
 
 function renderHeroFeed(ledger = []) {
   const feed = $("#hero-live-feed");
   if (!feed) return;
-  const rows = ledger.filter((r) => r.tx_hash).slice(0, 7);
+  const rows = ledger.filter((r) => isSettledReceipt(r) && r.tx_hash).slice(0, 7);
   feed.innerHTML = rows.length ? rows.map((r) => `
     <p>
       <span>${esc(shortTime(r.created_at))}</span>
@@ -132,7 +192,7 @@ function renderPaymentBubbles(ledger = []) {
   const shell = $("#payment-bubble-stream");
   if (!shell) return;
   const rows = ledger
-    .filter((r) => r.tx_hash && r.creator_name)
+    .filter((r) => isSettledReceipt(r) && r.tx_hash && r.creator_name)
     .slice(0, 6);
 
   if (!rows.length) {
@@ -299,11 +359,39 @@ function setCoverageNow(value) {
   bar.style.transform = `scaleX(${safeValue / 100})`;
 }
 
-function primeLiveDemo(runNow = false) {
+async function primeLiveDemo(runNow = false) {
   showView("console");
   $("#q-input").value = "Arc testnet predictable fees for high frequency payments";
-  $("#b-input").value = "0.011";
-  if (runNow) replayLatestLiveProof();
+  $("#b-input").value = "0.05";
+  if (!runNow) return;
+  if (primeDemoPromise) return primeDemoPromise;
+  const launchers = ["#demo-path-btn", "#topbar-demo-btn", "#quick-demo-btn"]
+    .map((selector) => $(selector))
+    .filter(Boolean);
+  launchers.forEach((button) => {
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+  });
+  primeDemoPromise = (async () => {
+    try {
+      const ledger = latestLedger.length ? latestLedger : await api("/api/ledger");
+      latestLedger = ledger;
+      if (ledger.length) {
+        await replayLatestLiveProof();
+      } else {
+        await runAgent();
+      }
+    } catch (_) {
+      await runAgent();
+    } finally {
+      launchers.forEach((button) => {
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+      });
+      primeDemoPromise = null;
+    }
+  })();
+  return primeDemoPromise;
 }
 
 async function replayLatestLiveProof() {
@@ -363,7 +451,7 @@ async function replayLatestLiveProof() {
   try {
     const ledger = latestLedger.length ? latestLedger : await api("/api/ledger");
     latestLedger = ledger;
-    const receipt = ledger.find(isLiveReceipt) || ledger[0];
+    const receipt = ledger.find(isLiveReceipt) || ledger.find(isMockReceipt);
     if (!receipt) throw new Error("No receipt available yet. Run the agent first.");
     const liveSettlement = isLiveReceipt(receipt);
     const amount = Number(receipt.amount_usdc || 0.011);
@@ -462,13 +550,13 @@ async function loadHealth() {
 }
 
 const STAT_CARDS = [
-  ["total_paid_usdc", "paid", (v) => money(v)],
-  ["total_reads", "reads", (v) => v],
+  ["live_paid_usdc", "live paid", (v) => money(v)],
+  ["live_reads", "live reads", (v) => v],
+  ["demo_reads", "simulated reads", (v) => v],
   ["num_runs", "runs", (v) => v],
   ["decisions_made", "decisions", (v) => v],
   ["usdc_saved_by_reuse", "saved", (v) => money(v)],
   ["num_creators", "creators", (v) => v],
-  ["num_articles", "sources", (v) => v],
 ];
 
 async function loadStats() {
@@ -483,7 +571,8 @@ async function loadStats() {
       </article>
     `).join("");
     const heroAmount = $("#hero-proof-amount");
-    if (heroAmount && s.total_paid_usdc) heroAmount.textContent = money(s.total_paid_usdc);
+    const receiptVolume = Number(s.live_paid_usdc || 0) || Number(s.demo_paid_usdc || 0);
+    if (heroAmount && receiptVolume) heroAmount.textContent = money(receiptVolume);
     loadLiveProof(s);
   } catch (e) {
     grid.innerHTML = `<p class="error">Cannot reach backend at ${esc(API)}: ${esc(e.message)}</p>`;
@@ -576,6 +665,125 @@ async function loadLiveProof(stats = null) {
         : `${activeCreators.size} creator payouts simulated`;
     }
   } catch (_) {}
+}
+
+async function verifyEvaluationEvidence(evidence) {
+  const status = $("#evidence-live-status");
+  const detail = $("#evidence-live-detail");
+  const button = $("#verify-evidence-btn");
+  if (!status || !detail || !button) return;
+  status.textContent = "checking Arc RPC";
+  status.className = "pill pill-muted";
+  button.disabled = true;
+  button.textContent = "Verifying...";
+  try {
+    const hash = evidence.arc.transaction_hash;
+    const proof = await withTimeout(
+      api(`/api/arc/transactions/${encodeURIComponent(hash)}/verify`),
+      12000,
+      "Arc RPC verification timed out",
+    );
+    if (proof.verified !== true || proof.successful !== true || proof.evidence_match !== true) {
+      throw new Error("on-chain receipt did not match the committed agent evidence");
+    }
+    const transfer = proof.matched_transfer;
+    if (!transfer) throw new Error("bound USDC Transfer event was not returned");
+    status.textContent = "live RPC confirmed";
+    status.className = "pill pill-ok";
+    const block = Number(
+      proof.receipt?.block_number || proof.block?.number || evidence.arc.block_number
+    ).toLocaleString();
+    detail.textContent = `Strict match via ${proof.rpc_host || "Arc Testnet RPC"} / payer, token, recipient, ${transfer.amount_usdc} USDC, and block ${block}`;
+  } catch (error) {
+    status.textContent = "saved proof available";
+    status.className = "pill pill-warn";
+    detail.textContent = `Live re-check unavailable: ${error.message}. The committed two-endpoint snapshot and Arcscan link remain available.`;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Verify again";
+  }
+}
+
+async function loadEvaluationEvidence(retryCount = 0) {
+  const box = $("#verified-evidence");
+  if (!box) return;
+  try {
+    const evidence = await withTimeout(
+      api("/api/evidence/latest"),
+      10000,
+      "Evidence endpoint timed out",
+    );
+    const run = evidence.agent_run;
+    const arc = evidence.arc;
+    const circle = evidence.circle;
+    const generated = new Date(evidence.generated_at).toLocaleString([], {
+      year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+    box.innerHTML = `
+      <header class="verified-evidence-head">
+        <div>
+          <span class="section-label">Fresh evidence / ${esc(generated)}</span>
+          <h2 id="verified-evidence-title">One agent decision. One real testnet receipt.</h2>
+          <p>${esc(evidence.disclosure)}</p>
+        </div>
+        <span id="evidence-live-status" class="pill pill-muted">checking Arc RPC</span>
+      </header>
+      <div class="verified-evidence-grid">
+        <div class="evidence-story">
+          <div class="evidence-amount-row">
+            <strong>${money(arc.amount_usdc, 2)}</strong>
+            <span>USDC paid to ${esc(run.creator)}</span>
+          </div>
+          <div class="evidence-metrics" aria-label="Agent budget evidence">
+            <article><span>Budget</span><strong>${money(run.budget_usdc, 2)}</strong></article>
+            <article><span>Spent</span><strong>${money(run.total_spent_usdc, 2)}</strong></article>
+            <article><span>Preserved</span><strong>${money(run.budget_remaining_usdc, 2)}</strong></article>
+            <article><span>Coverage</span><strong>${Math.round(Number(run.coverage_achieved) * 100)}%</strong></article>
+          </div>
+          <div class="evidence-decision-trace">
+            <div><b>BUY</b><span>${esc(run.article)}</span><small>best match within the per-source cap</small></div>
+            <div><b>SKIP</b><span>${Number(run.decision_counts.skip)} candidates</span><small>weak, redundant, or outside policy</small></div>
+            <div><b>STOP</b><span>${esc(run.stop_rule.replaceAll("_", " "))}</span><small>${esc(run.stop_reason)}</small></div>
+          </div>
+        </div>
+        <aside class="evidence-receipt" aria-label="Verified Arc Testnet receipt">
+          <div class="evidence-route" aria-label="Settlement route">
+            <span>Agent</span><i></i><span>Circle Wallets</span><i></i><span>Arc Testnet</span>
+          </div>
+          <dl>
+            <div><dt>Circle state</dt><dd>${esc(circle.state)}</dd></div>
+            <div><dt>Arc block</dt><dd>#${Number(arc.block_number).toLocaleString()}</dd></div>
+            <div><dt>Asset</dt><dd>USDC / Arc Testnet</dd></div>
+            <div><dt>Recipient</dt><dd><code>${esc(shortHash(arc.creator_address))}</code></dd></div>
+          </dl>
+          <div class="evidence-hash">
+            <span>Transaction hash</span>
+            <code>${esc(arc.transaction_hash)}</code>
+          </div>
+          <p id="evidence-live-detail">Saved receipt was independently checked through two Arc RPC endpoints; the button re-checks through the primary with fallback.</p>
+          <div class="evidence-actions">
+            <a class="primary" href="${esc(arc.explorer_url)}" target="_blank" rel="noreferrer">Open in Arcscan</a>
+            <button class="secondary" id="verify-evidence-btn" type="button">Verify again</button>
+          </div>
+        </aside>
+      </div>
+    `;
+    $("#verify-evidence-btn")?.addEventListener("click", () => verifyEvaluationEvidence(evidence));
+    verifyEvaluationEvidence(evidence);
+  } catch (error) {
+    box.innerHTML = `
+      <div class="verified-evidence-loading">
+        <span class="section-label">Fresh Arc evidence</span>
+        <h2 id="verified-evidence-title">Evidence endpoint is warming up.</h2>
+        <p>${esc(error.message)}</p>
+        <button class="secondary" id="retry-evidence-btn" type="button">Retry evidence</button>
+      </div>
+    `;
+    $("#retry-evidence-btn")?.addEventListener("click", () => loadEvaluationEvidence(1));
+    if (retryCount < 1) {
+      setTimeout(() => loadEvaluationEvidence(retryCount + 1), 1800);
+    }
+  }
 }
 
 async function resetDemoData() {
@@ -681,16 +889,22 @@ function renderMarketScan(state = "idle", run = null, query = "") {
 
   if (receipt) {
     const live = isLiveReceipt(receipt);
+    const mock = isMockReceipt(receipt);
+    const pending = isPendingReceipt(receipt);
     setHead(
-      `${live ? "Purchased" : "Simulated purchase"} "${receipt.title}"`,
-      live ? "paid" : "demo",
+      `${live ? "Purchased" : mock ? "Simulated purchase" : pending ? "Settlement pending" : "Settlement failed"} "${receipt.title}"`,
+      live ? "paid" : mock ? "demo" : pending ? "pending" : "failed",
     );
     const txCard = scanCard(
       "TX",
-      live ? "Arc receipt confirmed" : "Demo receipt recorded",
+      live ? "Arc receipt confirmed" : mock ? "Demo receipt recorded" : pending ? "Circle confirmation pending" : "Settlement not completed",
       live
         ? `${money(receipt.amount_usdc)} moved through Circle Wallets.`
-        : `${money(receipt.amount_usdc)} simulated; no on-chain funds moved.`,
+        : mock
+          ? `${money(receipt.amount_usdc)} simulated; no on-chain funds moved.`
+          : pending
+            ? `${money(receipt.amount_usdc)} reserved; content remains locked.`
+            : `${money(receipt.amount_usdc)} was not counted as paid.`,
       shortHash(receipt.tx_hash || receipt.transaction_id),
       "is-buy",
     );
@@ -863,6 +1077,16 @@ function updateUnlockModal(state, payload = {}) {
     $("#unlock-step-proof").className = "done";
     setUnlockProgress(100);
   }
+  if (state === "pending") {
+    modal.classList.remove("is-error");
+    $("#unlock-kicker").textContent = "Settlement pending";
+    $("#unlock-title").textContent = payload.title || "Source remains locked";
+    $("#unlock-meta").textContent = "Circle has not reported COMPLETE. The amount is reserved, no retry will be sent, and paid content stays locked.";
+    $("#unlock-proof-label").textContent = "Pending Circle transaction";
+    $("#unlock-proof").textContent = payload.receipt?.transaction_id || payload.receipt?.tx_hash || "durable payment claim recorded";
+    setUnlockStep("settle");
+    setUnlockProgress(72);
+  }
   if (state === "error") {
     modal.classList.add("is-error");
     $("#unlock-kicker").textContent = "Unlock failed";
@@ -885,6 +1109,27 @@ function showPurchasePopover(run) {
   const bought = (run.decisions || []).find((d) => d.decision === "buy");
   const selected = receipt || bought || reused;
   if (receipt) {
+    if (isPendingReceipt(receipt)) {
+      updatePurchasePopover(
+        "Settlement pending",
+        receipt.title || "Source remains locked",
+        "The transfer amount is reserved, but Circle has not reported COMPLETE. Obol will not retry or release paid content yet.",
+        receipt.transaction_id || receipt.tx_hash || "durable pending claim",
+        "Pending proof",
+      );
+      return;
+    }
+    if (isFailedReceipt(receipt)) {
+      updatePurchasePopover(
+        "Settlement failed",
+        receipt.title || "Source not purchased",
+        "Circle reported a terminal failure. No content was released and the failed amount is not counted as paid.",
+        receipt.transaction_id || "terminal failure recorded",
+        "Failure proof",
+      );
+      schedulePurchasePopoverHide(4600);
+      return;
+    }
     const live = isLiveReceipt(receipt);
     updatePurchasePopover(
       live ? "Purchase complete" : "Demo purchase complete",
@@ -975,11 +1220,18 @@ function renderChainLens(run = null) {
     set("#lens-decision", "No source met the bar");
   }
   if (receipt) {
+    const mode = receiptMode(receipt);
     set(
       "#lens-execution",
-      isLiveReceipt(receipt)
+      mode === "live"
         ? `${money(receipt.amount_usdc)} moved by Circle`
-        : `${money(receipt.amount_usdc)} simulated in demo mode`,
+        : mode === "mock"
+          ? `${money(receipt.amount_usdc)} simulated in demo mode`
+          : mode === "pending"
+            ? `${money(receipt.amount_usdc)} reserved / content locked`
+            : mode === "failed"
+              ? "Circle transfer failed / unpaid"
+              : "Receipt unverified / excluded",
     );
     set("#lens-receipt", shortHash(receipt.tx_hash || receipt.transaction_id));
   } else if (reused) {
@@ -1074,10 +1326,16 @@ async function runAgent() {
       body: JSON.stringify({ query, budget_usdc: budget, policy }),
     });
     renderRun(run);
-    renderRunSteps("done");
+    renderRunSteps(run.status === "pending" ? "settling" : run.status === "error" ? "idle" : "done");
     renderMarketScan("done", run, query);
     showPurchasePopover(run);
-    btn.textContent = (run.receipts || []).length ? "Purchased" : (run.saved_usdc > 0 ? "Reused receipt" : "Run complete");
+    btn.textContent = run.status === "pending"
+      ? "Settlement pending"
+      : run.status === "error"
+        ? "Settlement failed"
+        : (run.receipts || []).some(isSettledReceipt)
+          ? "Purchased"
+          : (run.saved_usdc > 0 ? "Reused receipt" : "Run complete");
     setTimeout(() => {
       if (!btn.disabled) btn.textContent = "Run agent";
     }, 1400);
@@ -1104,6 +1362,10 @@ function renderRun(run) {
   const coverage = Math.round((run.coverage || 0) * 100);
   const firstReceipt = (run.receipts || [])[0];
   const liveSettlement = isLiveReceipt(firstReceipt);
+  const mockSettlement = isMockReceipt(firstReceipt);
+  const pendingSettlement = isPendingReceipt(firstReceipt);
+  const failedSettlement = isFailedReceipt(firstReceipt);
+  const settledReceipt = isSettledReceipt(firstReceipt);
   const hasReusableSource = (run.decisions || []).some((d) => d.decision === "reuse");
   renderChainLens(run);
   $("#r-plan").textContent = run.plan || "";
@@ -1129,10 +1391,22 @@ function renderRun(run) {
   $("#r-stop-reason").textContent = run.stop_reason || "Run completed under policy.";
   if (firstReceipt) {
     $("#coverage-title").textContent = "Settlement Progress";
-    $("#coverage-note").textContent = liveSettlement
-      ? `Answer coverage: ${coverage}%. Live Arc payment proof is complete.`
-      : `Answer coverage: ${coverage}%. Simulated demo receipt is complete; no on-chain payment occurred.`;
-    animateCoverage(100, 1600);
+    if (liveSettlement) {
+      $("#coverage-note").textContent = `Answer coverage: ${coverage}%. Live Arc payment proof is complete.`;
+      animateCoverage(100, 1600);
+    } else if (mockSettlement) {
+      $("#coverage-note").textContent = `Answer coverage: ${coverage}%. Simulated demo receipt is complete; no on-chain payment occurred.`;
+      animateCoverage(100, 1600);
+    } else if (pendingSettlement) {
+      $("#coverage-note").textContent = "Circle has not reported COMPLETE. Funds are reserved and paid content remains locked.";
+      animateCoverage(72, 900);
+    } else if (failedSettlement) {
+      $("#coverage-note").textContent = "Circle reported a terminal failure. No paid content was released.";
+      animateCoverage(100, 900);
+    } else {
+      $("#coverage-note").textContent = "This legacy receipt is unverified and is not counted as a completed payment.";
+      animateCoverage(100, 900);
+    }
   } else if (hasReusableSource) {
     $("#coverage-title").textContent = "Receipt Reuse";
     $("#coverage-note").textContent = `Answer coverage: ${coverage}%. Prior paid receipt reused.`;
@@ -1155,20 +1429,43 @@ function renderRun(run) {
     </article>
   `).join("");
 
-  const decisionLabel = firstReceipt ? "Read approved" : "No paid read needed";
+  const decisionLabel = pendingSettlement
+    ? "Content locked"
+    : failedSettlement
+      ? "Purchase rejected"
+      : firstReceipt && settledReceipt
+        ? "Read approved"
+        : firstReceipt
+          ? "Receipt unverified"
+          : "No paid read needed";
   const settlementLabel = firstReceipt
     ? liveSettlement
       ? `${money(firstReceipt.amount_usdc)} paid through Circle Wallets`
-      : `${money(firstReceipt.amount_usdc)} simulated in demo mode`
+      : mockSettlement
+        ? `${money(firstReceipt.amount_usdc)} simulated in demo mode`
+        : pendingSettlement
+          ? `${money(firstReceipt.amount_usdc)} reserved pending COMPLETE`
+          : failedSettlement
+            ? `${money(firstReceipt.amount_usdc)} failed / not paid`
+            : `${money(firstReceipt.amount_usdc)} unverified legacy record`
     : `${money(run.saved_usdc)} preserved by reuse`;
   const proofLabel = firstReceipt
     ? shortHash(firstReceipt.tx_hash || firstReceipt.transaction_id)
     : "cache proof";
   $("#r-proof-grid").innerHTML = [
     ["Decision", decisionLabel, "best priced source"],
-    ["Settlement", settlementLabel, liveSettlement ? "Circle Wallets / Arc" : "Mock engine / no funds moved"],
+    ["Settlement", settlementLabel,
+      liveSettlement ? "Circle Wallets / Arc"
+        : mockSettlement ? "Mock engine / no funds moved"
+          : pendingSettlement ? "Awaiting Circle COMPLETE / no content"
+            : failedSettlement ? "Terminal failure / excluded from totals"
+              : "Unverified / excluded from totals"],
     ["Proof", proofLabel, firstReceipt
-      ? (liveSettlement ? "Arc txHash confirmed" : "Simulated receipt / not on-chain")
+      ? (liveSettlement ? "Arc txHash confirmed"
+        : mockSettlement ? "Simulated receipt / not on-chain"
+          : pendingSettlement ? "Pending transaction claim"
+            : failedSettlement ? "Failure record"
+              : "Legacy record / not verified")
       : "No new transfer required"],
   ].map(([label, main, detail]) => `
     <article class="result-proof">
@@ -1217,7 +1514,7 @@ function renderRun(run) {
       <article class="receipt">
         <span class="amt">${money(r.amount_usdc)}</span>
         <span class="to">${esc(r.creator_name)} / ${esc(r.title)}</span>
-        <span class="tx">${esc(isLiveReceipt(r) ? r.blockchain : "SIMULATED / NOT ON-CHAIN")} ${esc(shortHash(r.tx_hash || r.transaction_id))}</span>
+        <span class="tx">${esc(isLiveReceipt(r) ? r.blockchain : receiptModeLabel(r))} ${esc(shortHash(r.tx_hash || r.transaction_id))}</span>
       </article>
     `).join("")
     : `<p class="muted">No new payment was needed. The agent either reused cached reads or bought nothing.</p>`;
@@ -1231,25 +1528,37 @@ function renderReceiptDrawer(row) {
   const body = $("#drawer-body");
   if (!drawer || !title || !body || !row) return;
   const live = isLiveReceipt(row);
+  const mock = isMockReceipt(row);
+  const pending = isPendingReceipt(row);
+  const failed = isFailedReceipt(row);
+  const stateCopy = live
+    ? "confirmed on Arc Testnet"
+    : mock
+      ? "simulated demo receipt / not on-chain"
+      : pending
+        ? "pending / content locked / not counted as paid"
+        : failed
+          ? "failed / unpaid"
+          : "unverified legacy record";
   title.textContent = publicReceiptTitle(row.title || "Payment receipt", row.creator_name);
   body.innerHTML = `
     <div class="drawer-amount">
       <span>${money(row.amount_usdc)}</span>
-      <small>${esc(live ? "confirmed on Arc Testnet" : "simulated demo receipt / not on-chain")}</small>
+      <small>${esc(stateCopy)}</small>
     </div>
     <div class="receipt-detail-grid">
       <div><span>Creator</span><strong>${esc(row.creator_name)}</strong></div>
       <div><span>Source</span><strong>${esc(row.source || "agent")}</strong></div>
-      <div><span>Network</span><strong>${esc(live ? row.blockchain : "SIMULATED / NOT ON-CHAIN")}</strong></div>
+      <div><span>Network</span><strong>${esc(live ? row.blockchain : mock ? "SIMULATED / NOT ON-CHAIN" : "NOT CONFIRMED")}</strong></div>
       <div><span>Time</span><strong>${esc(shortTime(row.created_at))}</strong></div>
     </div>
     <div class="drawer-proof">
-      <span>${live ? "TxHash" : "Demo proof id"}</span>
-      <code>${esc(row.tx_hash || "pending")}</code>
+      <span>${live ? "TxHash" : mock ? "Demo proof id" : "Recorded proof"}</span>
+      <code>${esc(row.tx_hash || row.transaction_id || receiptModeLabel(row))}</code>
     </div>
     <div class="drawer-proof">
       <span>${live ? "Circle transaction" : "Settlement mode"}</span>
-      <code>${esc(live ? (row.transaction_id || "not available") : "mock / no funds moved")}</code>
+      <code>${esc(live ? (row.transaction_id || "not available") : receiptModeLabel(row))}</code>
     </div>
   `;
   drawer.classList.remove("hidden");
@@ -1385,12 +1694,33 @@ async function unlockArticle(articleId) {
   }, 7000);
   setTimeout(() => updateUnlockModal("settling"), 1200);
   try {
-    const res = await api(`/api/articles/${articleId}/unlock`, {
+    const response = await rawApi(`/api/articles/${articleId}/unlock`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ buyer: "human-demo-user" }),
     });
+    const res = response.body || {};
     if (waitingTimer) clearTimeout(waitingTimer);
+    if (response.status === 202 || res.status === "settlement_pending" || isPendingReceipt(res.receipt)) {
+      updateUnlockModal("pending", res);
+      if (status) {
+        status.textContent = "Circle confirmation is pending. No second transfer was sent and the source remains locked.";
+        status.className = "article-status is-pending";
+      }
+      renderReceiptDrawer({
+        ...res.receipt,
+        title: res.title,
+        creator_name: res.creator_name,
+        amount_usdc: res.amount_paid_usdc ?? res.receipt?.amount_usdc,
+        source: "human unlock",
+        created_at: res.receipt?.created_at || Math.floor(Date.now() / 1000),
+      });
+      await loadStats();
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(res.error || `${response.status} settlement request failed`);
+    }
     updateUnlockModal("success", res);
     const live = isLiveReceipt(res.receipt);
     if (status) {
@@ -1459,20 +1789,23 @@ async function selectCreator(cid) {
   box.innerHTML = `<p class="loading">loading earnings...</p>`;
   try {
     const d = await api(`/api/creators/${currentCreatorId}/earnings`);
-    const latest = d.payments && d.payments.length ? d.payments[0] : null;
+    const latest = d.settled_payments && d.settled_payments.length
+      ? d.settled_payments[0]
+      : null;
+    const unverifiedCount = (d.unverified_payments || []).length;
     box.innerHTML = `
       <div class="panel-head">
         <div>
           <span class="section-label">Creator wallet</span>
           <h3>${esc(d.creator.name)}</h3>
         </div>
-        <span class="pill">${d.num_reads} paid reads</span>
+        <span class="pill">${d.num_reads} live / ${d.demo_reads || 0} simulated reads</span>
       </div>
       <section class="creator-proof-lens">
         <article>
           <span>Total earned</span>
           <strong>${money(d.total_earned_usdc)}</strong>
-          <p>${d.payments.some(isLiveReceipt) ? "Includes live USDC paid reads" : "Simulated demo receipts"}</p>
+          <p>Confirmed live USDC only${d.demo_reads ? ` / ${money(d.demo_volume_usdc)} simulated separately` : ""}${unverifiedCount ? ` / ${unverifiedCount} unverified excluded` : ""}</p>
         </article>
         <article>
           <span>Latest paid source</span>
@@ -1483,7 +1816,7 @@ async function selectCreator(cid) {
           <span>Latest proof</span>
           <strong>${latest ? esc(shortHash(latest.tx_hash || latest.transaction_id)) : "no tx yet"}</strong>
           <p>${latest
-            ? esc(isLiveReceipt(latest) ? (latest.blockchain || "ARC-TESTNET") : "SIMULATED / NOT ON-CHAIN")
+            ? esc(isLiveReceipt(latest) ? (latest.blockchain || "ARC-TESTNET") : receiptModeLabel(latest))
             : "waiting for receipt"}</p>
         </article>
       </section>
@@ -1499,7 +1832,7 @@ async function selectCreator(cid) {
                 ${p.tx_hash ? `<code>${esc(shortHash(p.tx_hash))}</code>` : ""}
               </span>
             </div>
-            <span class="amt">+${money(p.amount_usdc)}</span>
+            <span class="amt">${isLiveReceipt(p) ? "+" : ""}${money(p.amount_usdc)}${isMockReceipt(p) ? " simulated" : isPendingReceipt(p) ? " reserved" : isFailedReceipt(p) ? " unpaid" : ""}</span>
           </div>
         `).join("") : `<p class="muted">No earnings yet. Run the agent or unlock through x402.</p>`}
       </div>
@@ -1592,7 +1925,7 @@ async function loadTraction() {
           <span>Run #${r.id} / budget ${money(r.budget_usdc)}</span>
           <p>${esc(r.query)}</p>
         </div>
-        <strong>${money(r.total_spent)} spent</strong>
+        <strong>${money(r.total_spent)} ${r.status === "pending" ? "reserved" : "spent"}</strong>
       </article>
     `).join("") : `<p class="muted">No agent runs yet. Run the Agent Console first.</p>`;
 
@@ -1618,7 +1951,7 @@ async function loadTraction() {
               <td>${esc(r.creator_name)}</td>
               <td>${esc(publicReceiptTitle(r.title, r.creator_name))}</td>
               <td class="amount-cell">${money(r.amount_usdc)}</td>
-              <td><span class="status-pill">${isLiveReceipt(r) ? "live confirmed" : "simulated"}</span></td>
+              <td><span class="status-pill">${esc(receiptModeLabel(r))}</span></td>
               <td class="hash-cell">${esc(shortHash(r.tx_hash || r.transaction_id))}</td>
               <td><button class="mini-action view-proof" type="button">View</button></td>
             </tr>
@@ -1805,6 +2138,7 @@ function init() {
   loadHealth();
   renderMarketScan("idle");
   loadStats();
+  loadEvaluationEvidence();
   updateDaemonDeck();
   loadMarket();
   loadCreators();
@@ -1830,9 +2164,9 @@ async function replayRunForRecording(runId, mode = "success") {
   $("#run-dashboard").classList.remove("hidden");
   $("#decision-section").classList.remove("hidden");
   renderRun(run);
-  renderRunSteps("done");
+  renderRunSteps(run.status === "pending" ? "settling" : run.status === "error" ? "idle" : "done");
   renderMarketScan("done", run, run.query);
-  setCoverageNow(100);
+  setCoverageNow(run.status === "pending" ? 72 : 100);
   showPurchasePopover(run);
   if (mode === "decision") {
     hidePurchasePopover();

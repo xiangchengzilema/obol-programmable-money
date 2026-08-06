@@ -27,6 +27,10 @@ class WalletPoolExhausted(RuntimeError):
     """Raised when no configured payer wallet can cover a requested payment."""
 
 
+class SettlementOutcomeUnknown(RuntimeError):
+    """Raised when a transfer may have been accepted but no result was returned."""
+
+
 def _load_json(path, default):
     if not path.exists():
         return default
@@ -214,9 +218,13 @@ def pay_from_buyer_pool(circle, to_address, amount_usdc, reference="", buyer_hin
         wallet_id = buyer.get("wallet_id")
         try:
             balance = wallet_usdc_balance(circle, wallet_id)
-            if balance + 1e-9 < amount:
-                errors.append(f"{buyer.get('buyer_id')} balance {balance:.6f} < {amount:.6f}")
-                continue
+        except Exception as exc:
+            errors.append(f"{buyer.get('buyer_id')} balance check: {str(exc)[:180]}")
+            continue
+        if balance + 1e-9 < amount:
+            errors.append(f"{buyer.get('buyer_id')} balance {balance:.6f} < {amount:.6f}")
+            continue
+        try:
             tx = circle.send_usdc_from_wallet(
                 wallet_id,
                 to_address,
@@ -232,16 +240,24 @@ def pay_from_buyer_pool(circle, to_address, amount_usdc, reference="", buyer_hin
             })
             return tx
         except Exception as exc:
-            errors.append(f"{buyer.get('buyer_id')}: {str(exc)[:180]}")
-            if not _is_insufficient_balance(exc):
+            if _is_insufficient_balance(exc):
+                errors.append(f"{buyer.get('buyer_id')}: {str(exc)[:180]}")
                 continue
+            raise SettlementOutcomeUnknown(
+                "Circle transfer outcome is unknown; the payment claim remains "
+                "locked to prevent a second wallet from paying the same source"
+            ) from exc
 
     # Last resort: preserve old behavior if the operator wallet itself can cover it.
     agent_wallet_id = getattr(circle, "agent_wallet_id", "")
     if agent_wallet_id:
         try:
             balance = wallet_usdc_balance(circle, agent_wallet_id)
-            if balance + 1e-9 >= amount:
+        except Exception as exc:
+            errors.append(f"operator wallet balance check: {str(exc)[:180]}")
+            balance = 0.0
+        if balance + 1e-9 >= amount:
+            try:
                 tx = circle.send_usdc_from_wallet(agent_wallet_id, to_address, amount, reference)
                 _store_balance(agent_wallet_id, max(0.0, balance - amount))
                 tx.update({
@@ -250,9 +266,16 @@ def pay_from_buyer_pool(circle, to_address, amount_usdc, reference="", buyer_hin
                     "payer_address": "",
                 })
                 return tx
+            except Exception as exc:
+                if _is_insufficient_balance(exc):
+                    errors.append(f"operator wallet: {str(exc)[:180]}")
+                else:
+                    raise SettlementOutcomeUnknown(
+                        "Circle transfer outcome is unknown; the payment claim "
+                        "remains locked to prevent duplicate payment"
+                    ) from exc
+        else:
             errors.append(f"operator wallet balance {balance:.6f} < {amount:.6f}")
-        except Exception as exc:
-            errors.append(f"operator wallet: {str(exc)[:180]}")
 
     checked = len(buyers) + (1 if agent_wallet_id else 0)
     raise WalletPoolExhausted(

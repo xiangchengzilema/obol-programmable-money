@@ -35,6 +35,16 @@ RETRYABLE_HTTP = {408, 425, 429, 500, 502, 503, 504}
 RETRY_ATTEMPTS = int(os.getenv("OBOL_CIRCLE_RETRY_ATTEMPTS", "3"))
 
 
+def _valid_tx_hash(value):
+    if not isinstance(value, str) or len(value) != 66 or not value.startswith("0x"):
+        return False
+    try:
+        int(value[2:], 16)
+        return True
+    except ValueError:
+        return False
+
+
 class CircleService:
     def __init__(self, api_key=None, entity_secret=None):
         self.force_mock = os.getenv("OBOL_FORCE_MOCK", "").lower() in ("1", "true", "yes")
@@ -54,6 +64,26 @@ class CircleService:
     @property
     def mode(self):
         return "live" if self.is_configured else "mock"
+
+    @staticmethod
+    def settlement_mode_for_transaction(tx, configured_mode="legacy"):
+        """Classify a receipt without overstating a pending Circle transfer.
+
+        Only Circle transactions that reached COMPLETE and expose a real Arc
+        transaction hash are counted as live settled. Submitted transactions
+        remain pending and therefore stay out of the public live totals.
+        """
+        tx = tx if isinstance(tx, dict) else {}
+        mode = tx.get("mode") or configured_mode
+        if mode == "mock":
+            return "mock"
+        if mode == "live":
+            if tx.get("state") == "COMPLETE" and _valid_tx_hash(tx.get("tx_hash")):
+                return "live"
+            if tx.get("state") in {"FAILED", "CANCELLED", "DENIED"}:
+                return "failed"
+            return "pending"
+        return "legacy"
 
     def readiness(self):
         missing = []
@@ -166,15 +196,18 @@ class CircleService:
                 "blockchain": w["blockchain"], "state": w["state"]}
 
     def _wait_for_transaction(self, transaction_id, timeout_seconds=TRANSFER_WAIT_SECONDS):
-        """Poll Circle until a transaction has a tx hash, reaches a terminal state,
-        or the timeout expires."""
+        """Poll Circle until a terminal state or the timeout expires.
+
+        A txHash only means the transfer was submitted. Content and live
+        revenue must not be released until Circle reports COMPLETE.
+        """
         if not transaction_id or timeout_seconds <= 0:
             return None
         deadline = time.time() + timeout_seconds
         last = None
         while time.time() < deadline:
             last = self.get_transaction(transaction_id)
-            if last.get("txHash") or last.get("state") in TERMINAL_STATES:
+            if last.get("state") in TERMINAL_STATES:
                 return last
             time.sleep(TRANSFER_POLL_SECONDS)
         return last

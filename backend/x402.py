@@ -45,7 +45,7 @@ def valid_proof(proof):
 
 
 def grant(article, buyer, tx_hash, source="x402", transaction_id="",
-          settlement_mode="mock"):
+          settlement_mode="mock", settlement_scope=None):
     """Record an external purchase receipt and return it.
 
     The mock proof is a tx hash, so treat it as an idempotency key. Replaying the
@@ -54,21 +54,31 @@ def grant(article, buyer, tx_hash, source="x402", transaction_id="",
     """
     conn = get_db()
     cur = conn.cursor()
-    existing = cur.execute("SELECT * FROM receipts WHERE tx_hash=? AND source=?",
-                           (tx_hash, source)).fetchone()
+    existing = None
+    if tx_hash:
+        existing = cur.execute(
+            "SELECT * FROM receipts WHERE tx_hash=? AND source=?",
+            (tx_hash, source),
+        ).fetchone()
     if existing:
         receipt = dict(existing)
         conn.close()
         if receipt["article_id"] != article["id"]:
             raise ValueError("payment proof already used for another resource")
         return receipt
+    if settlement_scope is None:
+        settlement_scope = (
+            "mock" if settlement_mode == "mock"
+            else "live" if settlement_mode in {"live", "pending", "failed"}
+            else "legacy"
+        )
     cur.execute("""INSERT INTO receipts(run_id, article_id, creator_id, amount_usdc,
                    tx_hash, transaction_id, blockchain, settlement_mode,
-                   source, buyer, created_at)
-                   VALUES(NULL,?,?,?,?,?,?,?,?,?,?)""",
+                   settlement_scope, source, buyer, created_at)
+                   VALUES(NULL,?,?,?,?,?,?,?,?,?,?,?)""",
                 (article["id"], article["creator_id"], article["price_usdc"],
                  tx_hash, transaction_id, "ARC-TESTNET", settlement_mode,
-                 source, buyer, time.time()))
+                 settlement_scope, source, buyer, time.time()))
     conn.commit()
     rid = cur.lastrowid
     receipt = dict(cur.execute("SELECT * FROM receipts WHERE id=?", (rid,)).fetchone())
@@ -96,6 +106,7 @@ def demo_grant(article, buyer, tx_hash):
         "transaction_id": "",
         "blockchain": "SIMULATED-ARC-TESTNET",
         "settlement_mode": "mock",
+        "settlement_scope": "mock",
         "source": "x402-demo",
         "buyer": buyer,
         "created_at": time.time(),

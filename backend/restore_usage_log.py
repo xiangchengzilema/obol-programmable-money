@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 from db import DB_PATH, get_db, init_db
+from circle_service import CircleService
 import seed
 import usage_simulator
 
@@ -29,9 +30,13 @@ def _load_events():
         if not line.strip():
             continue
         events.append(json.loads(line))
-    paid = [e for e in events if e.get("event") == "paid_read" and e.get("tx_hash")]
+    paid = [
+        e for e in events
+        if e.get("event") in {"paid_read", "settlement_pending", "settlement_failed"}
+        and (e.get("tx_hash") or e.get("transaction_id"))
+    ]
     if not paid:
-        raise SystemExit("Usage log has no paid_read events with tx_hash.")
+        raise SystemExit("Usage log has no restorable settlement events.")
     return events, paid
 
 
@@ -84,17 +89,42 @@ def restore():
     skipped = 0
     for event in paid:
         tx_hash = event.get("tx_hash")
-        if conn.execute("SELECT 1 FROM receipts WHERE tx_hash=?", (tx_hash,)).fetchone():
+        if tx_hash:
+            duplicate = conn.execute(
+                "SELECT 1 FROM receipts WHERE tx_hash=?", (tx_hash,)
+            ).fetchone()
+        else:
+            duplicate = conn.execute(
+                "SELECT 1 FROM receipts WHERE transaction_id=?",
+                (event.get("transaction_id", ""),),
+            ).fetchone()
+        if duplicate:
             skipped += 1
             continue
         creator_id = creators.get(event.get("creator"))
         if not creator_id:
             skipped += 1
             continue
+        if event.get("live") is True:
+            settlement_mode = CircleService.settlement_mode_for_transaction(
+                {
+                    "mode": "live",
+                    "state": event.get("state"),
+                    "tx_hash": event.get("tx_hash"),
+                },
+                "live",
+            )
+            if settlement_mode != "live":
+                settlement_mode = "legacy"
+        elif event.get("live") is False:
+            settlement_mode = "mock"
+        else:
+            settlement_mode = "legacy"
         conn.execute(
             """INSERT INTO receipts(run_id, article_id, creator_id, amount_usdc,
-               tx_hash, transaction_id, blockchain, source, buyer, created_at)
-               VALUES(NULL,?,?,?,?,?,?,?,?,?)""",
+               tx_hash, transaction_id, blockchain, settlement_mode,
+               settlement_scope, source, buyer, created_at)
+               VALUES(NULL,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 int(event["article_id"]),
                 creator_id,
@@ -102,6 +132,12 @@ def restore():
                 tx_hash,
                 event.get("transaction_id", ""),
                 "ARC-TESTNET",
+                settlement_mode,
+                (
+                    "mock" if settlement_mode == "mock"
+                    else "live" if event.get("live") is True
+                    else "legacy"
+                ),
                 "usage-sim",
                 event.get("buyer", ""),
                 float(event.get("time") or time.time()),

@@ -24,6 +24,8 @@ NATURAL_TARGETS = {
     "Rina Park": 2.08,
     "Northstar Protocols": 1.54,
 }
+SOURCE = "usage-sim"
+CLAIM_TYPE = "usage"
 
 
 def _money(value):
@@ -33,8 +35,30 @@ def _money(value):
 def _current(conn):
     rows = conn.execute(
         """SELECT c.id, c.name, c.payout_address,
-                  ROUND(COALESCE(SUM(r.amount_usdc),0), 6) AS earned_usdc,
-                  COUNT(r.id) AS receipts
+                  ROUND(COALESCE(SUM(CASE WHEN r.settlement_mode='live'
+                       AND r.settlement_scope='live' THEN r.amount_usdc ELSE 0 END),0), 6)
+                       AS earned_usdc,
+                  ROUND(COALESCE(SUM(CASE WHEN r.settlement_mode='live'
+                       AND r.settlement_scope='live' THEN r.amount_usdc ELSE 0 END),0), 6)
+                       AS live_earned_usdc,
+                  ROUND(COALESCE(SUM(CASE WHEN r.settlement_mode='mock'
+                       AND r.settlement_scope='mock' THEN r.amount_usdc ELSE 0 END),0), 6)
+                       AS mock_earned_usdc,
+                  COUNT(CASE WHEN r.settlement_mode='live'
+                       AND r.settlement_scope='live' THEN 1 END) AS receipts,
+                  ROUND(COALESCE(SUM(CASE WHEN r.settlement_mode='pending'
+                       AND r.settlement_scope='live' THEN r.amount_usdc ELSE 0 END),0), 6)
+                       AS pending_usdc,
+                  COUNT(CASE WHEN r.settlement_mode='pending'
+                       AND r.settlement_scope='live' THEN 1 END) AS pending_receipts,
+                  ROUND(COALESCE(SUM(CASE WHEN r.settlement_mode IN ('pending','failed','legacy')
+                       OR (r.settlement_mode='live' AND r.settlement_scope<>'live')
+                       OR (r.settlement_mode='mock' AND r.settlement_scope<>'mock')
+                       THEN r.amount_usdc ELSE 0 END),0), 6) AS unverified_usdc,
+                  COUNT(CASE WHEN r.settlement_mode IN ('pending','failed','legacy')
+                       OR (r.settlement_mode='live' AND r.settlement_scope<>'live')
+                       OR (r.settlement_mode='mock' AND r.settlement_scope<>'mock')
+                       THEN 1 END) AS unverified_receipts
            FROM creators c LEFT JOIN receipts r ON r.creator_id=c.id
            GROUP BY c.id
            ORDER BY c.id"""
@@ -72,6 +96,90 @@ def _ensure_article(conn, creator, amount):
         "SELECT * FROM articles WHERE creator_id=? AND title=?",
         (creator["id"], title),
     ).fetchone())
+
+
+def _claim_payment(conn, article, creator, buyer, amount):
+    """Atomically reserve this article/buyer/live payment before Circle I/O."""
+    buyer_id = buyer["buyer_id"]
+    now = time.time()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        claim = conn.execute(
+            """SELECT r.* FROM payment_claims p
+               JOIN receipts r ON r.id=p.receipt_id
+               WHERE p.claim_type=? AND p.article_id=? AND p.buyer_key=?
+                 AND p.settlement_scope='live'""",
+            (CLAIM_TYPE, article["id"], buyer_id),
+        ).fetchone()
+        if claim:
+            conn.commit()
+            return dict(claim), False
+
+        existing = conn.execute(
+            """SELECT * FROM receipts
+               WHERE article_id=? AND creator_id=? AND buyer=? AND source=?
+                 AND settlement_scope='live' AND settlement_mode<>'legacy'
+               ORDER BY CASE WHEN settlement_mode='live' THEN 0
+                              WHEN settlement_mode='pending' THEN 1
+                              ELSE 2 END, id DESC LIMIT 1""",
+            (article["id"], creator["id"], buyer_id, SOURCE),
+        ).fetchone()
+        if existing:
+            receipt_id = existing["id"]
+        else:
+            cur = conn.execute(
+                """INSERT INTO receipts(run_id, article_id, creator_id, amount_usdc,
+                   tx_hash, transaction_id, blockchain, settlement_mode,
+                   settlement_scope, source, buyer, created_at)
+                   VALUES(NULL,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    article["id"], creator["id"], amount, "", "",
+                    "ARC-TESTNET", "pending", "live", SOURCE, buyer_id, now,
+                ),
+            )
+            receipt_id = cur.lastrowid
+        conn.execute(
+            """INSERT OR IGNORE INTO payment_claims(
+               claim_type, article_id, buyer_key, settlement_scope,
+               receipt_id, created_at, updated_at)
+               VALUES(?,?,?,?,?,?,?)""",
+            (CLAIM_TYPE, article["id"], buyer_id, "live", receipt_id, now, now),
+        )
+        claim = conn.execute(
+            """SELECT r.* FROM payment_claims p
+               JOIN receipts r ON r.id=p.receipt_id
+               WHERE p.claim_type=? AND p.article_id=? AND p.buyer_key=?
+                 AND p.settlement_scope='live'""",
+            (CLAIM_TYPE, article["id"], buyer_id),
+        ).fetchone()
+        conn.commit()
+        return dict(claim), existing is None and claim["id"] == receipt_id
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def _update_claim(conn, receipt_id, settlement_mode, tx=None):
+    tx = tx if isinstance(tx, dict) else {}
+    conn.execute(
+        """UPDATE receipts
+           SET tx_hash=?, transaction_id=?, blockchain=?, settlement_mode=?
+           WHERE id=?""",
+        (
+            tx.get("tx_hash", ""), tx.get("transaction_id", ""),
+            tx.get("blockchain", "ARC-TESTNET"), settlement_mode, receipt_id,
+        ),
+    )
+    conn.execute(
+        "UPDATE payment_claims SET updated_at=? WHERE receipt_id=?",
+        (time.time(), receipt_id),
+    )
+    conn.commit()
+
+
+def _definitely_insufficient(exc):
+    message = str(exc).lower()
+    return "insufficient" in message or "155258" in message
 
 
 def run(targets, buyer_start, buyer_end, dry_run=False):
@@ -113,8 +221,32 @@ def run(targets, buyer_start, buyer_end, dry_run=False):
         item["article_id"] = article["id"]
         tx = None
         errors = []
+        blocked_by_pending = False
         for attempt in range(len(buyers)):
             selected = buyers[(buyer_idx - 1 + attempt) % len(buyers)]
+            receipt, owned = _claim_payment(conn, article, creator, selected, amount)
+            if not owned:
+                mode = receipt.get("settlement_mode", "pending")
+                errors.append({
+                    "buyer": selected["buyer_id"],
+                    "status": mode,
+                    "error": "existing payment claim",
+                })
+                if mode == "pending":
+                    # An earlier request may already have reached Circle.  Never
+                    # switch payer wallets while that outcome is unknown.
+                    buyer = selected
+                    item["buyer"] = selected["buyer_id"]
+                    item["status"] = "pending"
+                    item["settlement_mode"] = "pending"
+                    item["transaction_id"] = receipt.get("transaction_id", "")
+                    item["tx_hash"] = receipt.get("tx_hash", "")
+                    blocked_by_pending = True
+                    break
+                # A settled claim already contributed to _current(); if the
+                # target was raised, a different buyer can fund the increment.
+                # A definite failed claim is likewise safe to skip.
+                continue
             try:
                 tx = circle.send_usdc_from_wallet(
                     selected["wallet_id"],
@@ -124,33 +256,49 @@ def run(targets, buyer_start, buyer_end, dry_run=False):
                 )
                 buyer = selected
                 item["buyer"] = buyer["buyer_id"]
+                settlement_mode = circle.settlement_mode_for_transaction(tx, circle.mode)
+                _update_claim(conn, receipt["id"], settlement_mode, tx)
+                if settlement_mode == "pending":
+                    item["status"] = "pending"
+                    item["settlement_mode"] = "pending"
+                    blocked_by_pending = True
+                    break
+                if settlement_mode != "live":
+                    errors.append({
+                        "buyer": selected["buyer_id"],
+                        "status": settlement_mode,
+                        "error": "Circle did not return a live settled transfer",
+                    })
+                    tx = None
+                    continue
                 break
             except Exception as exc:
                 errors.append({"buyer": selected["buyer_id"], "error": str(exc)[:220]})
-        if tx is None:
-            item["status"] = "error"
+                if _definitely_insufficient(exc):
+                    _update_claim(conn, receipt["id"], "failed")
+                    continue
+                # The claim was persisted before Circle was called.  Preserve
+                # it as pending and stop immediately: choosing another wallet
+                # here could double-pay after a lost/timeout response.
+                buyer = selected
+                item["buyer"] = selected["buyer_id"]
+                item["status"] = "pending"
+                item["settlement_mode"] = "pending"
+                blocked_by_pending = True
+                break
+        if blocked_by_pending:
             item["errors"] = errors
             payments.append(item)
             continue
-        conn.execute(
-            """INSERT INTO receipts(run_id, article_id, creator_id, amount_usdc,
-               tx_hash, transaction_id, blockchain, source, buyer, created_at)
-               VALUES(NULL,?,?,?,?,?,?,?,?,?)""",
-            (
-                article["id"],
-                creator["id"],
-                amount,
-                tx.get("tx_hash", ""),
-                tx.get("transaction_id", ""),
-                tx.get("blockchain", "ARC-TESTNET"),
-                "usage-sim",
-                buyer["buyer_id"],
-                time.time(),
-            ),
-        )
-        conn.commit()
+        if tx is None:
+            item["status"] = "error"
+            item["settlement_mode"] = "failed"
+            item["errors"] = errors
+            payments.append(item)
+            continue
         item.update({
             "status": tx.get("state", "submitted"),
+            "settlement_mode": settlement_mode,
             "tx_hash": tx.get("tx_hash", ""),
             "transaction_id": tx.get("transaction_id", ""),
         })

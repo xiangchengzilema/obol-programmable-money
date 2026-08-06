@@ -43,11 +43,23 @@ native agent API, and an x402-style endpoint.
 - Honest evidence rules: seeded records, automated evaluation, mock receipts,
   and Arc Testnet transfers are never described as organic users or production
   revenue.
+- Fresh 2026-08-06 Circle Wallets transfer generated from this repository:
+  `$0.010 USDC`, Circle state `COMPLETE`, Arc block `55,584,226`.
+- Public Arcscan proof:
+  `0x03a7e7c96283b545798d101d46a4fb48865bcb069fdba2311352fe9e56b92809`.
+- Committed non-secret evidence manifest and judge-readable browser panel.
+- Server-side Arc verifier with `.network` primary, `.io` fallback, chain-ID
+  validation, redacted provider output, and browser-RPC independence.
+- Cold-start public demo now creates a labelled simulated run when its ledger is
+  empty instead of attempting to replay a receipt that does not exist.
+- x402 CORS preflight now allows `X-Payment` and `X-Payer`.
+- All auxiliary receipt writers persist explicit `live`, `mock`, or `legacy`
+  settlement modes rather than silently downgrading fresh receipts.
+- Public Render demo verified through the local production-equivalent path; 46
+  backend tests and the frontend JavaScript syntax check pass.
 
-## Evidence still to complete
+## Remaining final-submission media
 
-- Public HTTPS demo and incognito smoke test.
-- Fresh local Circle Wallets transfer on Arc Testnet.
-- Public Arc explorer proof.
-- Final test count and commit SHA.
-- Final deck PDF and public three-minute video.
+- Record and publish the final three-minute product video.
+- Export/upload the refreshed deck and verify anonymous access.
+- Record the final deployed commit SHA after Render completes deployment.

@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "evidence_id": "obol-arc-agent-run-20260806-01",
+  "label": "Arc Testnet evaluation payment",
+  "generated_from_repository": "https://github.com/xiangchengzilema/obol-programmable-money",
+  "generated_at": "2026-08-06T09:03:59Z",
+  "checked_at": "2026-08-06T09:11:13Z",
+  "disclosure": "This is a testnet evaluation transfer generated from the current Arc Programmable Money repository. It is not organic usage, production revenue, or a mainnet payment. The anonymous public playground remains fail-closed in mock mode.",
+  "agent_run": {
+    "run_id": 1,
+    "query": "Arc testnet predictable fees for AI paid reads",
+    "budget_usdc": 0.05,
+    "protected_reserve_usdc": 0.005,
+    "max_source_price_usdc": 0.02,
+    "minimum_relevance": 0.35,
+    "max_purchases": 1,
+    "coverage_target": 0.6,
+    "coverage_achieved": 0.6667,
+    "total_spent_usdc": 0.01,
+    "budget_remaining_usdc": 0.04,
+    "purchase_count": 1,
+    "decision_counts": {
+      "buy": 1,
+      "reuse": 0,
+      "skip": 20
+    },
+    "stop_rule": "coverage_target",
+    "stop_reason": "Stopped with 67% coverage, meeting the 60% target; $0.040 remains.",
+    "article": "Arc testnet: predictable fees for high-frequency payments",
+    "creator": "The Arc Letter"
+  },
+  "circle": {
+    "transaction_id": "d7e70603-cd6f-5c8c-96e8-7aacc4c10892",
+    "state": "COMPLETE",
+    "blockchain": "ARC-TESTNET"
+  },
+  "arc": {
+    "chain_id": 5042002,
+    "network": "Arc Testnet",
+    "asset": "USDC",
+    "token_contract": "0x3600000000000000000000000000000000000000",
+    "token_decimals": 6,
+    "amount_usdc": 0.01,
+    "amount_base_units": 10000,
+    "payer_address": "0x21f19dae0e6e6d20657f9c8d03bce02c7d476b99",
+    "creator_address": "0x7e5dd2bea58f08424eb99d15cd3947ad70c3c6cb",
+    "transaction_hash": "0x03a7e7c96283b545798d101d46a4fb48865bcb069fdba2311352fe9e56b92809",
+    "transaction_status": "success",
+    "block_number": 55584226,
+    "block_hash": "0xdd34817d7aacc5eafa3b72b4358b8df21625965321e7394d05bbcbaf5f0a669b",
+    "block_timestamp": "2026-08-06T09:03:59Z",
+    "explorer_url": "https://testnet.arcscan.app/tx/0x03a7e7c96283b545798d101d46a4fb48865bcb069fdba2311352fe9e56b92809"
+  },
+  "rpc_verification": [
+    {
+      "host": "rpc.testnet.arc.network",
+      "receipt_status": "0x1",
+      "transaction_hash_matches": true,
+      "block_number_matches": true
+    },
+    {
+      "host": "rpc.testnet.arc.io",
+      "receipt_status": "0x1",
+      "transaction_hash_matches": true,
+      "block_number_matches": true
+    }
+  ],
+  "official_references": {
+    "arc_network": "https://docs.arc.io/arc/references/connect-to-arc",
+    "arc_explorer": "https://testnet.arcscan.app/",
+    "circle_arc_usdc": "https://developers.circle.com/stablecoins/usdc-contract-addresses"
+  }
+}
