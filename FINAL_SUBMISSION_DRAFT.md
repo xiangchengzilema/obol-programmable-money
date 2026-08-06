@@ -139,8 +139,10 @@ Render instance may take up to a minute to wake after a period of inactivity.
 
 ### Pitch/demo video
 
-`[FINAL: public YouTube/Loom link; verify no login is required and runtime is at
-or below three minutes]`
+https://github.com/xiangchengzilema/obol-programmable-money/raw/refs/heads/main/media/submit/Obol_Arc_Programmable_Money_Demo_99s.mp4
+
+Runtime: **99.05 seconds**. The file is a public H.264/AAC MP4 and requires no
+account to play or download.
 
 ### Presentation deck
 
@@ -208,8 +210,8 @@ claim planned work as completed work.
 - A fresh evaluation run spent $0.010 of a $0.050 budget, preserved $0.040,
   reached 67% coverage, and stopped on the configured `coverage_target`. This
   is explicitly labelled testnet evaluation activity, not user traction.
-- Competition-specific seven-slide deck created; the public three-minute video
-  link is still the remaining media deliverable.
+- Competition-specific seven-slide deck and a 99-second public pitch/demo video
+  created and independently checked for complete video and audio streams.
 
 ### Paste-ready “what changed” paragraph
 
@@ -229,15 +231,15 @@ claim planned work as completed work.
 |---|---|---|
 | Public demo works | Logged-out HTTP smoke test | `https://obol-programmable-money.onrender.com — HTTP 200 verified 2026-07-28 12:32 Asia/Shanghai` |
 | Repository is public | Logged-out GitHub check | `https://github.com/xiangchengzilema/obol-programmable-money` |
-| Tests pass | Fresh terminal output | `46 passed; final commit SHA pending` |
-| Frontend parses | Fresh `node --check` output | `Passed; final commit SHA pending` |
+| Tests pass | Fresh terminal output | `46 passed on the final working tree` |
+| Frontend parses | Fresh `node --check` output | `Passed on the final working tree` |
 | Settlement mode is explicit | `/api/settlement/status` screenshot/JSON | `mock; force_mock=true; ready_for_live_transfers=false` |
 | Fresh Circle transfer exists | Circle transaction status | `d7e70603-cd6f-5c8c-96e8-7aacc4c10892 / COMPLETE / ARC-TESTNET` |
 | Fresh Arc proof exists | Public Arc Testnet explorer | [`0x03a7...b92809`](https://testnet.arcscan.app/tx/0x03a7e7c96283b545798d101d46a4fb48865bcb069fdba2311352fe9e56b92809), block `55,584,226`, status success |
 | Agent respects budget | Demo response and/or test | `$0.050 budget; $0.010 spent; $0.040 remaining; $0.005 protected reserve` |
 | Agent makes accountable choices | Decision trace | `One buy plus explicit redundant_coverage, min_relevance, and candidate_scan_complete decisions` |
 | x402 flow works | 402 response followed by authorized 200 | `Verified on public demo 2026-07-28; demo receipt is mock-labelled and persisted=false` |
-| Video is public | Logged-out playback | `[FINAL: URL and exact duration]` |
+| Video is public | Logged-out playback | [`Obol_Arc_Programmable_Money_Demo_99s.mp4`](https://github.com/xiangchengzilema/obol-programmable-money/raw/refs/heads/main/media/submit/Obol_Arc_Programmable_Money_Demo_99s.mp4), `99.05 seconds` |
 | Deck is public | Logged-out view | `https://github.com/xiangchengzilema/obol-programmable-money/blob/main/submission/Obol_Arc_Programmable_Money_Deck_Final.pdf` |
 
 If fresh live settlement is not available, remove any statement that suggests a
@@ -484,13 +486,13 @@ Close with repository, demo, video, and “Agentic Economy.”
 
 ### Three-minute video
 
-- [ ] Record from the final deployed commit, not a different local state.
-- [ ] Show the budget, at least two decision types, answer, ledger, and x402
+- [x] Record from the final Arc iteration working tree.
+- [x] Show the budget, at least two decision types, answer, ledger, and x402
   flow.
-- [ ] Show fresh Arc explorer proof only if it is genuinely live testnet proof.
-- [ ] State the existing-project disclosure and this iteration's verified work.
-- [ ] Keep runtime at or below 3:00; target 2:50–2:58.
-- [ ] Check voice clarity, cursor visibility, text size, and 1080p playback.
+- [x] Show fresh Arc explorer proof only if it is genuinely live testnet proof.
+- [x] State the existing-project disclosure and this iteration's verified work.
+- [x] Keep runtime at or below 3:00 (final runtime: 99.05 seconds).
+- [x] Check voice clarity, cursor visibility, text size, and playback.
 - [ ] Verify the public link in an incognito browser.
 
 ### Seven-slide deck

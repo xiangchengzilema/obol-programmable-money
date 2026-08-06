@@ -29,9 +29,9 @@ const timeline = [
     id: "02",
     start: 8,
     end: 15.5,
-    label: "RESOLUTION",
-    text: "Obol turns every useful agent read into a small USDC payment, a creator receipt, and an Arc transaction proof that judges can verify.",
-    accent: "USDC + receipt + txHash",
+    label: "FRESH ARC EVIDENCE",
+    text: "Obol binds a current-repository agent decision to a completed Circle transfer and verifies payer, token, recipient, amount, transaction hash, and block on Arc Testnet.",
+    accent: "strict USDC proof",
   },
   {
     id: "03",
@@ -53,9 +53,9 @@ const timeline = [
     id: "05",
     start: 32.5,
     end: 42,
-    label: "LIVE SETTLEMENT",
-    text: "Here, one source is selected. Circle submits the wallet payment, the creator receives USDC, and Arc returns the settlement proof.",
-    accent: "Circle -> Arc proof",
+    label: "SAFE JUDGE DEMO",
+    text: "The anonymous playground is deliberately forced mock and labels its receipt as simulated. Paid content is released only for a confirmed live receipt or an explicit mock demo receipt.",
+    accent: "mock is never called live",
   },
   {
     id: "06",
@@ -78,8 +78,8 @@ const timeline = [
     start: 59,
     end: 68,
     label: "CREATOR SIDE",
-    text: "Creator Studio shows the seller side: paid reads, revenue, receipt history, and an independent payout trail for each creator.",
-    accent: "creator revenue",
+    text: "Creator Studio separates confirmed live earnings from simulated demo volume, pending attempts, and failed transfers, with an independent receipt trail for each creator.",
+    accent: "honest creator accounting",
   },
   {
     id: "09",
@@ -93,9 +93,9 @@ const timeline = [
     id: "10",
     start: 79,
     end: 91,
-    label: "TRACTION PROOF",
-    text: "The traction ledger consolidates runs, receipts, payment status, and paid volume. Each agent receipt exposes the creator, amount, Circle transaction id, and Arc transaction hash.",
-    accent: "verifiable receipt",
+    label: "THIS ITERATION",
+    text: "Obol began before this hackathon. This iteration added programmable spend guards, strict Arc proof verification, concurrency-safe payment claims, honest settlement states, and forty-six passing backend tests.",
+    accent: "existing project / substantial new work",
   },
   {
     id: "11",
@@ -233,7 +233,7 @@ function ObolDemoV23() {
   return (
     <AbsoluteFill style={{ backgroundColor: "#05090a" }}>
       <Video src={staticFile("obol_demo_v23_raw_plate.mp4")} />
-      <Audio src={staticFile("obol_v22_indextts2_soft_voiceover.wav")} />
+      <Audio src={staticFile("obol_v23_edge_voiceover.wav")} />
       <Keyword segment={segment} />
       <ProgressRail />
       <Subtitle segment={segment} />

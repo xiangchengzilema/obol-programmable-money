@@ -2,26 +2,38 @@ import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const ROOT = path.resolve(process.cwd());
 const OUT = path.join(ROOT, "media", "demo_draft");
-const VIDEO_TOOLS = path.join(ROOT, "tools", "video-tools");
+const RECORDER_TOOLS = path.join(ROOT, "tools", "demo_recorder");
 const REMOTION_PUBLIC = path.join(ROOT, "tools", "remotion", "public");
-const requireFromTools = createRequire(path.join(VIDEO_TOOLS, "package.json"));
+const requireFromTools = createRequire(path.join(RECORDER_TOOLS, "package.json"));
 const { chromium } = requireFromTools("playwright-core");
 
 const EDGE = existsSync("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe")
   ? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
   : "C:/Program Files/Google/Chrome/Application/chrome.exe";
 
-const FFMPEG = path.join(VIDEO_TOOLS, "node_modules", "ffmpeg-static", "ffmpeg.exe");
-const BASE = "http://127.0.0.1:5001/";
+const FFMPEG = process.env.OBOL_FFMPEG_PATH || path.join(
+  ROOT,
+  "tools",
+  "remotion",
+  "node_modules",
+  "@remotion",
+  "compositor-win32-x64-msvc",
+  "ffmpeg.exe",
+);
+const normalizeBase = (value) => `${value.replace(/\/+$/, "")}/`;
+const BASE = normalizeBase(
+  process.env.OBOL_RECORD_BASE || "https://obol-programmable-money.onrender.com/",
+);
 const RECORD_DIR = path.join(OUT, "playwright_v23_submit");
 const CHECK_DIR = path.join(OUT, "v23_checks");
 const WEBM = path.join(OUT, "obol_demo_playwright_v23_submit.webm");
 const RAW_MP4 = path.join(OUT, "obol_demo_v23_raw_plate.mp4");
 const PUBLIC_RAW_MP4 = path.join(REMOTION_PUBLIC, "obol_demo_v23_raw_plate.mp4");
+let localBackend = null;
 
 const segments = [
   {
@@ -39,9 +51,10 @@ const segments = [
     action: async (page) => {
       await page.mouse.move(1280, 566, { steps: 28 });
       await page.evaluate(() => {
-        document.querySelector("#live-proof")?.scrollIntoView({ block: "center", behavior: "smooth" });
+        const evidence = document.querySelector("#verified-evidence") || document.querySelector("#live-proof");
+        evidence?.scrollIntoView({ block: "center", behavior: "smooth" });
       });
-      await page.waitForTimeout(900);
+      await page.waitForTimeout(1400);
       await shot(page, "02_live_arc_proof");
     },
   },
@@ -60,7 +73,7 @@ const segments = [
     id: "04_source_selection",
     duration: 9500,
     action: async (page) => {
-      await page.locator("#quick-demo-btn").click();
+      await clickId(page, "quick-demo-btn");
       await page.waitForTimeout(1500);
       await shot(page, "04_agent_scoring");
     },
@@ -94,7 +107,7 @@ const segments = [
     duration: 9000,
     action: async (page) => {
       await clickNav(page, "market", 900);
-      await page.locator("#market-search").fill("live testnet");
+      await page.locator("#market-search").fill("Arc testnet");
       await page.mouse.move(640, 390, { steps: 24 });
       await page.waitForTimeout(600);
       await shot(page, "07_marketplace");
@@ -119,9 +132,9 @@ const segments = [
     duration: 11000,
     action: async (page) => {
       await clickNav(page, "x402", 900);
-      await page.locator("#x402-challenge-btn").click();
+      await clickId(page, "x402-challenge-btn");
       await page.waitForTimeout(1100);
-      await page.locator("#x402-pay-btn").click();
+      await clickId(page, "x402-pay-btn");
       await page.waitForTimeout(1200);
       await shot(page, "09_x402");
     },
@@ -162,6 +175,43 @@ async function ensureBackend() {
   } catch (error) {
     throw new Error(`Backend is not reachable at ${BASE}: ${error.message}`);
   }
+}
+
+async function startLocalBackend() {
+  const target = new URL(BASE);
+  if (!["127.0.0.1", "localhost"].includes(target.hostname)) {
+    throw new Error(`OBOL_START_LOCAL=1 requires a localhost URL, received ${BASE}`);
+  }
+  const port = target.port || "5001";
+  const dbPath = process.env.OBOL_RECORD_DB || path.join(OUT, "obol_video_v23.db");
+  localBackend = spawn(process.env.OBOL_PYTHON || "python", ["app.py"], {
+    cwd: path.join(ROOT, "backend"),
+    windowsHide: true,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      PORT: port,
+      OBOL_PUBLIC_DEMO: "1",
+      OBOL_FORCE_MOCK: "1",
+      OBOL_AUTO_SEED: "1",
+      OBOL_DB_PATH: dbPath,
+    },
+  });
+  localBackend.once("exit", (code) => {
+    if (code && code !== 0) {
+      console.error(`local backend exited early with code ${code}`);
+    }
+  });
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    try {
+      await ensureBackend();
+      console.log(`started local final-commit demo backend at ${BASE}`);
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  throw new Error(`Local backend did not become ready at ${BASE}`);
 }
 
 async function pause(page, ms) {
@@ -429,9 +479,15 @@ async function gotoScene(page, scene, wait = 700) {
 }
 
 async function clickNav(page, viewName, wait = 700) {
-  await page.locator(`.nav button[data-view="${viewName}"]`).click();
+  await page.evaluate((targetView) => {
+    document.querySelector(`.nav button[data-view="${targetView}"]`)?.click();
+  }, viewName);
   await installRecordingMode(page);
   await pause(page, wait);
+}
+
+async function clickId(page, id) {
+  await page.evaluate((targetId) => document.getElementById(targetId)?.click(), id);
 }
 
 async function shot(page, name) {
@@ -525,6 +581,7 @@ async function runSegment(page, seg) {
   const started = Date.now();
   await seg.action(page);
   const elapsed = Date.now() - started;
+  console.log(`${seg.id} action=${elapsed}ms hold=${Math.max(0, seg.duration - elapsed)}ms`);
   if (elapsed < seg.duration) {
     await pause(page, seg.duration - elapsed);
   }
@@ -537,7 +594,15 @@ function runFfmpeg(args) {
   }
 }
 
-await ensureBackend();
+async function main() {
+if (process.env.OBOL_START_LOCAL === "1") {
+  await startLocalBackend();
+} else {
+  await ensureBackend();
+}
+if (!existsSync(FFMPEG)) {
+  throw new Error(`ffmpeg is not available at ${FFMPEG}. Run npm ci in tools/remotion first.`);
+}
 await fs.rm(RECORD_DIR, { recursive: true, force: true });
 await fs.rm(CHECK_DIR, { recursive: true, force: true });
 await fs.rm(WEBM, { force: true });
@@ -568,7 +633,6 @@ const context = await browser.newContext({
 
 const page = await context.newPage();
 page.setDefaultTimeout(20000);
-await gotoScene(page, "home", 1200);
 
 for (const seg of segments) {
   console.log(`recording ${seg.id}`);
@@ -585,8 +649,11 @@ console.log(`wrote ${WEBM}`);
 
 runFfmpeg([
   "-y",
+  "-ss", "0.12",
   "-i", WEBM,
-  "-vf", "fps=30,format=yuv420p",
+  "-r", "30",
+  "-pix_fmt", "yuv420p",
+  "-t", "99",
   "-an",
   "-c:v", "libx264",
   "-preset", "medium",
@@ -597,3 +664,10 @@ runFfmpeg([
 await fs.copyFile(RAW_MP4, PUBLIC_RAW_MP4);
 console.log(`wrote ${RAW_MP4}`);
 console.log(`copied ${PUBLIC_RAW_MP4}`);
+}
+
+try {
+  await main();
+} finally {
+  localBackend?.kill();
+}
