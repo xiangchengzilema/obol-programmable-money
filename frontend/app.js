@@ -1305,6 +1305,9 @@ async function runAgent() {
       );
     }, 1050),
   ];
+  const clearProgressTimers = () => {
+    progressTimers.forEach((timer) => clearTimeout(timer));
+  };
   $("#r-plan").innerHTML = `<span class="loading">scoring sources, checking budget, and deciding what to buy...</span>`;
   $("#r-summary").innerHTML = "";
   $("#r-proof-grid").innerHTML = "";
@@ -1325,6 +1328,11 @@ async function runAgent() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, budget_usdc: budget, policy }),
     });
+    // A warm public demo can answer before the staged progress animation has
+    // finished. Stop every pending stage before rendering the terminal state;
+    // otherwise a late timer can overwrite "complete" with the 28% scoring
+    // popover and cancel its auto-close timer.
+    clearProgressTimers();
     renderRun(run);
     renderRunSteps(run.status === "pending" ? "settling" : run.status === "error" ? "idle" : "done");
     renderMarketScan("done", run, query);
@@ -1341,6 +1349,7 @@ async function runAgent() {
     }, 1400);
     await Promise.all([loadStats(), currentCreatorId ? selectCreator(currentCreatorId) : Promise.resolve()]);
   } catch (e) {
+    clearProgressTimers();
     $("#r-plan").innerHTML = `<span class="error">Error: ${esc(e.message)}</span>`;
     updatePurchasePopover(
       "Run failed",
@@ -1350,7 +1359,7 @@ async function runAgent() {
       "Diagnostics",
     );
   } finally {
-    progressTimers.forEach((timer) => clearTimeout(timer));
+    clearProgressTimers();
     dashboard.classList.remove("is-running");
     resultStage.classList.remove("agent-running");
     btn.disabled = false;
