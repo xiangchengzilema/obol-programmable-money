@@ -139,7 +139,7 @@ Render instance may take up to a minute to wake after a period of inactivity.
 
 ### Pitch/demo video
 
-https://github.com/xiangchengzilema/obol-programmable-money/raw/refs/heads/main/media/submit/Obol_Arc_Programmable_Money_Demo_99s.mp4
+https://github.com/xiangchengzilema/obol-programmable-money/raw/refs/heads/main/media/submit/Obol_Arc_Programmable_Money_Demo_Final.mp4
 
 Runtime: **99.05 seconds**. The file is a public H.264/AAC MP4 and requires no
 account to play or download.
@@ -239,7 +239,7 @@ claim planned work as completed work.
 | Agent respects budget | Demo response and/or test | `$0.050 budget; $0.010 spent; $0.040 remaining; $0.005 protected reserve` |
 | Agent makes accountable choices | Decision trace | `One buy plus explicit redundant_coverage, min_relevance, and candidate_scan_complete decisions` |
 | x402 flow works | 402 response followed by authorized 200 | `Verified on public demo 2026-07-28; demo receipt is mock-labelled and persisted=false` |
-| Video is public | Logged-out playback | [`Obol_Arc_Programmable_Money_Demo_99s.mp4`](https://github.com/xiangchengzilema/obol-programmable-money/raw/refs/heads/main/media/submit/Obol_Arc_Programmable_Money_Demo_99s.mp4), `99.05 seconds` |
+| Video is public | Logged-out playback | [`Obol_Arc_Programmable_Money_Demo_Final.mp4`](https://github.com/xiangchengzilema/obol-programmable-money/raw/refs/heads/main/media/submit/Obol_Arc_Programmable_Money_Demo_Final.mp4), `99.05 seconds` |
 | Deck is public | Logged-out view | `https://github.com/xiangchengzilema/obol-programmable-money/blob/main/submission/Obol_Arc_Programmable_Money_Deck_Final.pdf` |
 
 If fresh live settlement is not available, remove any statement that suggests a

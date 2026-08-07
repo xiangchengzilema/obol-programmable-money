@@ -102,8 +102,8 @@ const timeline = [
     start: 91,
     end: 99,
     label: "CLOSING",
-    text: "Obol makes machine reading accountable: agents choose sources, Circle settles USDC, Arc proves the read, and creators get paid.",
-    accent: "chain-verifiable reads",
+    text: "Obol makes machine reading accountable: agents choose sources, Circle settles USDC, Arc verifies the transfer, and creators get paid.",
+    accent: "chain-verifiable payments",
   },
 ];
 

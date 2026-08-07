@@ -80,7 +80,7 @@ async function showEndSlate(page) {
     slate.innerHTML = `
       <div class="end-mark">O</div>
       <p class="end-kicker">OBOL / ARC TESTNET SETTLEMENT</p>
-      <h1>Agents choose sources.<br>Circle settles USDC.<br>Arc proves the read.</h1>
+      <h1>Agents choose sources.<br>Circle settles USDC.<br>Arc verifies the transfer.</h1>
       <div class="end-proof">
         <span>creator receipts</span>
         <span>Circle transaction id</span>
@@ -223,7 +223,7 @@ await smoothScroll(page, 280, 12);
 await pause(page, 1200);
 
 await gotoHash(page, "home", 1600);
-await caption(page, "Obol makes machine reading accountable: agents choose sources, Circle settles USDC, Arc proves the read, and creators get paid.", 5200);
+await caption(page, "Obol makes machine reading accountable: agents choose sources, Circle settles USDC, Arc verifies the transfer, and creators get paid.", 5200);
 await showEndSlate(page);
 await pause(page, 5200);
 

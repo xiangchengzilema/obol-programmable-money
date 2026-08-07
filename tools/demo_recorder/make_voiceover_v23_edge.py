@@ -32,7 +32,7 @@ SEGMENTS = [
     (9.0, "Creator Studio separates confirmed live earnings from simulated demo volume, pending attempts, and failed transfers, with an independent receipt trail for every creator."),
     (11.0, "For external agents, Obol exposes the same market through an X four oh two style HTTP payment flow. Request, receive a four oh two challenge, attach payment proof, and unlock the resource."),
     (12.0, "Obol began before this hackathon. This iteration added programmable spend guards, strict Arc proof verification, concurrency safe payment claims, honest settlement states, and forty six passing backend tests."),
-    (8.0, "Obol makes machine reading accountable. Agents choose sources, Circle settles U S D C, Arc proves the read, and creators get paid."),
+    (8.0, "Obol makes machine reading accountable. Agents choose sources, Circle settles U S D C, Arc verifies the transfer, and creators get paid."),
 ]
 
 

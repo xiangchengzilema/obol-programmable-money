@@ -169,7 +169,7 @@ await smoothScroll(page, 280, 10);
 await pause(page, 800);
 
 await gotoHash(page, "home", 1200);
-await caption(page, "Obol: agents choose sources, Circle moves USDC, Arc proves the read, creators get paid.", 3300);
+await caption(page, "Obol: agents choose sources, Circle moves USDC, Arc verifies the transfer, creators get paid.", 3300);
 await hideCaption(page);
 await pause(page, 700);
 

@@ -504,7 +504,7 @@ async function showEndSlate(page) {
       <div class="end-grid">
         <div class="end-mark">O</div>
         <p>OBOL / ARC TESTNET SETTLEMENT</p>
-        <h1>Agents choose sources.<br>Circle settles USDC.<br>Arc proves the read.</h1>
+        <h1>Agents choose sources.<br>Circle settles USDC.<br>Arc verifies the transfer.</h1>
         <div class="end-proof">
           <span>Creator receipts</span>
           <span>Circle transaction id</span>

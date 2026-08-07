@@ -8,7 +8,7 @@ Prepared for the **Arc Programmable Money Hackathon — Agentic Economy Track**.
   notes and source references.
 - `Obol_Arc_Programmable_Money_Deck_Final.pdf` — public-view backup for the
   submission form.
-- `../media/submit/Obol_Arc_Programmable_Money_Demo_99s.mp4` — 99-second
+- `../media/submit/Obol_Arc_Programmable_Money_Demo_Final.mp4` — 99-second
   H.264/AAC pitch and product demo with narration and captions.
 - `VIDEO_RECORDING_GUIDE.md` — exact ≤3-minute recording sequence and
   paste-ready English narration.
@@ -20,7 +20,7 @@ Prepared for the **Arc Programmable Money Hackathon — Agentic Economy Track**.
 - Demo: <https://obol-programmable-money.onrender.com>
 - Repository: <https://github.com/xiangchengzilema/obol-programmable-money>
 - Presentation: <https://github.com/xiangchengzilema/obol-programmable-money/blob/main/submission/Obol_Arc_Programmable_Money_Deck_Final.pdf>
-- Video: <https://github.com/xiangchengzilema/obol-programmable-money/raw/refs/heads/main/media/submit/Obol_Arc_Programmable_Money_Demo_99s.mp4>
+- Video: <https://github.com/xiangchengzilema/obol-programmable-money/raw/refs/heads/main/media/submit/Obol_Arc_Programmable_Money_Demo_Final.mp4>
 - Track: Agentic Economy
 
 ## Verified evidence

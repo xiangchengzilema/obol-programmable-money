@@ -166,7 +166,7 @@ await smoothScroll(page, 280, 12);
 await pause(page, 1200);
 
 await gotoHash(page, "home", 1600);
-await caption(page, "Obol: agents choose sources, Circle moves USDC, Arc proves the read, creators get paid.", 5200);
+await caption(page, "Obol: agents choose sources, Circle moves USDC, Arc verifies the transfer, creators get paid.", 5200);
 await page.evaluate(() => document.querySelector("#demo-caption")?.remove());
 await pause(page, 900);
 

@@ -123,7 +123,7 @@ const segments = [
   {
     id: "closing",
     duration: 8000,
-    caption: "Agents choose sources. Circle settles USDC. Arc proves the read. Creators get paid.",
+    caption: "Agents choose sources. Circle settles USDC. Arc verifies the transfer. Creators get paid.",
     action: async (page) => {
       await gotoHash(page, "home", 700);
       await page.waitForTimeout(2600);
@@ -197,7 +197,7 @@ async function showEndSlate(page) {
     slate.innerHTML = `
       <div class="end-mark">O</div>
       <p class="end-kicker">OBOL / ARC TESTNET SETTLEMENT</p>
-      <h1>Agents choose sources.<br>Circle settles USDC.<br>Arc proves the read.</h1>
+      <h1>Agents choose sources.<br>Circle settles USDC.<br>Arc verifies the transfer.</h1>
       <div class="end-proof">
         <span>creator receipts</span>
         <span>Circle transaction id</span>

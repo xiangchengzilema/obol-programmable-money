@@ -39,7 +39,7 @@ SHORT_EN = {
     "08_creator_side": "Creator Studio shows paid reads, revenue, receipt history, and payout trails.",
     "09_x402": "x402 exposes the market to external agents through an HTTP-native payment flow.",
     "10_traction": "Each agent receipt shows creator, amount, Circle transaction id, and Arc txHash.",
-    "11_closing": "Agents choose sources. Circle settles USDC. Arc proves the read. Creators get paid.",
+    "11_closing": "Agents choose sources. Circle settles USDC. Arc verifies the transfer. Creators get paid.",
 }
 
 

@@ -4,7 +4,8 @@
     "render:v21": "remotion render src/index.jsx ObolDemo ../../media/demo_draft/obol_demo_v21_indextts2_remotion.mp4 --codec h264 --crf 20",
     "render:v21:caption-fixed": "remotion render src/index.jsx ObolDemo ../../media/demo_draft/obol_demo_v21_indextts2_caption_fixed.mp4 --codec h264 --crf 20",
     "render:v22": "remotion render src/index.jsx ObolDemo ../../media/demo_draft/obol_demo_v22_indextts2_soft.mp4 --codec h264 --crf 20",
-    "render:v23": "remotion render src/index_v23.jsx ObolDemoV23 ../../media/demo_draft/obol_demo_v23_submit.mp4 --codec h264 --crf 19"
+    "render:v23": "remotion render src/index_v23.jsx ObolDemoV23 ../../media/demo_draft/obol_demo_v23_submit.mp4 --codec h264 --crf 19",
+    "render:final": "remotion render src/index_final_hybrid.jsx ObolFinalHybrid ../../media/submit/Obol_Arc_Programmable_Money_Demo_Final.mp4 --codec h264 --crf 19 --audio-bitrate 192k"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.482",

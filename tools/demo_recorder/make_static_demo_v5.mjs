@@ -26,7 +26,7 @@ const scenes = [
   ["08_creators", "creators", 8, "Creators see paid reads as revenue, with receipt history."],
   ["09_x402", "x402", 8, "x402 gives external AI clients a machine-facing payment path."],
   ["10_traction", "traction", 10, "The ledger records creator, amount, Circle id, and Arc txHash."],
-  ["11_close", "home", 10, "AI agents choose sources. Circle moves USDC. Arc proves the read."],
+  ["11_close", "home", 10, "AI agents choose sources. Circle moves USDC. Arc verifies the transfer."],
 ];
 
 function run(cmd, args, cwd = ROOT) {

@@ -4,6 +4,8 @@
 
 [**Live judge demo → obol-programmable-money.onrender.com**](https://obol-programmable-money.onrender.com)
 
+**Final materials:** [99-second demo video](https://github.com/xiangchengzilema/obol-programmable-money/raw/refs/heads/main/media/submit/Obol_Arc_Programmable_Money_Demo_Final.mp4) · [judge deck (PDF)](https://github.com/xiangchengzilema/obol-programmable-money/blob/main/submission/Obol_Arc_Programmable_Money_Deck_Final.pdf) · [submission notes](FINAL_SUBMISSION_DRAFT.md)
+
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/xiangchengzilema/obol-programmable-money)
 
 Obol gives autonomous AI agents a USDC budget to buy creator content per read,

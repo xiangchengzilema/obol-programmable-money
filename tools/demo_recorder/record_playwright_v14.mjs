@@ -154,7 +154,7 @@ await smoothScroll(page, 280, 12);
 await pause(page, 1200);
 
 await gotoHash(page, "home", 1600);
-await caption(page, "Obol makes machine reading accountable: agents choose sources, Circle settles USDC, Arc proves the read, and creators get paid.", 5200);
+await caption(page, "Obol makes machine reading accountable: agents choose sources, Circle settles USDC, Arc verifies the transfer, and creators get paid.", 5200);
 await page.evaluate(() => document.querySelector("#demo-caption")?.remove());
 await pause(page, 900);
 
