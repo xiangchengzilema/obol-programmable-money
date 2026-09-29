@@ -215,6 +215,11 @@ def test_arc_transaction_verification_returns_404_when_all_rpcs_agree(monkeypatc
         raise AssertionError(f"unexpected method: {method}")
 
     monkeypatch.setattr(appmod.arc_verifier, "_rpc_call", not_found)
+    monkeypatch.setattr(
+        appmod.arc_verifier,
+        "_verify_with_explorer",
+        lambda _hash: (_ for _ in ()).throw(appmod.arc_verifier.TransactionNotFound()),
+    )
     tx_hash = "0x" + "d" * 64
     monkeypatch.setattr(appmod, "_load_latest_evidence", lambda: {
         "evidence_id": "missing-test",
@@ -237,6 +242,76 @@ def test_arc_transaction_verification_returns_404_when_all_rpcs_agree(monkeypatc
     assert body["tx_hash"] == tx_hash
     assert body["network"] == "arc-testnet"
     assert body["rpc_hosts"] == ["rpc.testnet.arc.network", "rpc.testnet.arc.io"]
+
+
+def test_historical_transaction_uses_strict_explorer_fallback(monkeypatch):
+    verifier = appmod.arc_verifier
+    tx_hash = "0x" + "c" * 64
+    block_hash = "0x" + "b" * 64
+    payer = "0x" + "1" * 40
+    creator = "0x" + "3" * 40
+    token = verifier.ARC_USDC_ADDRESS
+    monkeypatch.delenv("ARC_RPC_URL", raising=False)
+    verifier._VERIFY_CACHE.clear()
+
+    def missing_rpc(_url, method, _params, timeout=8):
+        return "0x4cef52" if method == "eth_chainId" else None
+
+    def explorer(path, timeout=8):
+        if path == f"/transactions/{tx_hash}":
+            return {
+                "hash": tx_hash, "status": "ok", "is_pending_update": False,
+                "block_number": 16, "from": {"hash": payer},
+                "to": {"hash": token}, "value": "0", "nonce": 1,
+                "raw_input": "0x1234", "position": 2, "gas_used": "48938",
+                "gas_price": "22051600000", "token_transfers_overflow": False,
+                "token_transfers": [{
+                    "transaction_hash": tx_hash, "block_number": 16,
+                    "block_hash": block_hash,
+                    "from": {"hash": payer}, "to": {"hash": creator},
+                    "token": {"address_hash": token},
+                    "total": {"decimals": "6", "value": "10000"},
+                }],
+            }
+        assert path == "/blocks/16"
+        return {
+            "height": 16, "hash": block_hash,
+            "timestamp": "2026-08-06T09:03:59.000000Z",
+        }
+
+    monkeypatch.setattr(verifier, "_rpc_call", missing_rpc)
+    monkeypatch.setattr(verifier, "_explorer_json", explorer)
+    evidence = {
+        "evidence_id": "historical-fallback-test",
+        "circle": {"state": "COMPLETE"},
+        "arc": {
+            "chain_id": verifier.ARC_CHAIN_ID,
+            "transaction_hash": tx_hash,
+            "payer_address": payer,
+            "creator_address": creator,
+            "token_contract": token,
+            "amount_base_units": 10000,
+            "block_number": 16,
+            "block_hash": block_hash,
+        },
+    }
+    proof = verifier.verify_evidence_bundle(evidence)
+    assert proof["verified"] is True
+    assert proof["evidence_match"] is True
+    assert proof["source_type"] == "public-explorer-fallback"
+    assert proof["matched_transfer"]["amount_base_units"] == 10000
+
+    verifier._VERIFY_CACHE.clear()
+    def conflicting_explorer(path, timeout=8):
+        result = explorer(path, timeout)
+        if path.startswith("/transactions/"):
+            result["token_transfers"][0]["to"] = {"hash": "0x" + "4" * 40}
+        return result
+
+    monkeypatch.setattr(verifier, "_explorer_json", conflicting_explorer)
+    with pytest.raises(verifier.ArcRPCError, match="does not match"):
+        verifier.verify_evidence_bundle(evidence)
+    verifier._VERIFY_CACHE.clear()
 
 
 def test_arc_verifier_rejects_uncommitted_hash_before_rpc(monkeypatch):

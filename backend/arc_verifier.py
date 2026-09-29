@@ -26,6 +26,7 @@ ERC20_TRANSFER_TOPIC = (
 USDC_DECIMALS = 6
 PRIMARY_RPC_URL = "https://rpc.testnet.arc.network"
 FALLBACK_RPC_URL = "https://rpc.testnet.arc.io"
+EXPLORER_API_URL = "https://explorer.testnet.arc.io/api/v2"
 TX_HASH_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
 HEX_RE = re.compile(r"^0x[0-9a-fA-F]+$")
 ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
@@ -129,6 +130,48 @@ def _rpc_call(rpc_url, method, params, timeout=8):
     if not isinstance(body, dict) or "error" in body or "result" not in body:
         raise ArcRPCError("RPC returned an error")
     return body["result"]
+
+
+def _explorer_json(path, timeout=8):
+    """Read the public Arc Testnet explorer only after both RPCs miss a tx.
+
+    The path is assembled solely from a validated hash or numeric block height.
+    An explorer failure is an unavailable check, never proof of a missing tx.
+    """
+    request = urllib.request.Request(
+        EXPLORER_API_URL + path,
+        headers={"Accept": "application/json", "User-Agent": "ObolArcVerifier/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read(2_000_001)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise TransactionNotFound("transaction not found by Arc explorer") from None
+        raise ArcRPCError("Arc explorer request failed") from None
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        raise ArcRPCError("Arc explorer request failed") from None
+    if len(raw) > 2_000_000:
+        raise ArcRPCError("Arc explorer response too large")
+    try:
+        body = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
+        raise ArcRPCError("Arc explorer returned invalid JSON") from None
+    if not isinstance(body, dict):
+        raise ArcRPCError("Arc explorer returned invalid data")
+    return body
+
+
+def _decimal_int(value, field):
+    if isinstance(value, bool) or not re.fullmatch(r"[0-9]+", str(value)):
+        raise ArcRPCError(f"Arc explorer returned invalid {field}")
+    return int(value)
+
+
+def _explorer_address(value, field):
+    if not isinstance(value, dict):
+        raise ArcRPCError(f"Arc explorer returned invalid {field}")
+    return _safe_address(value.get("hash"), field)
 
 
 def _hex_int(value, field, allow_none=False):
@@ -349,6 +392,116 @@ def _verify_with_rpc(tx_hash, rpc_url):
     }
 
 
+def _verify_with_explorer(tx_hash):
+    """Cross-check an old receipt with Arc's public explorer if RPC history misses it.
+
+    This is a separately labelled indexer result, not misrepresented as an RPC
+    response. Every field used to bind the committed evidence is validated.
+    """
+    tx = _explorer_json(f"/transactions/{tx_hash}")
+    if _safe_hash(tx.get("hash"), "explorer transaction hash") != tx_hash:
+        raise ArcRPCError("Arc explorer returned a different transaction")
+    if tx.get("status") != "ok" or tx.get("is_pending_update"):
+        raise ArcRPCError("Arc explorer transaction is not confirmed successful")
+
+    block_number = _decimal_int(tx.get("block_number"), "block number")
+    if block_number <= 0:
+        raise ArcRPCError("Arc explorer returned invalid block number")
+    try:
+        block = _explorer_json(f"/blocks/{block_number}")
+    except TransactionNotFound:
+        raise ArcRPCError("Arc explorer returned an incomplete block") from None
+    if _decimal_int(block.get("height"), "block height") != block_number:
+        raise ArcRPCError("Arc explorer returned a different block")
+    block_hash = _safe_hash(block.get("hash"), "block hash")
+    try:
+        block_time = block.get("timestamp")
+        if not isinstance(block_time, str) or not block_time.endswith("Z"):
+            raise ValueError("not a UTC timestamp")
+        timestamp = int(datetime.fromisoformat(
+            block_time.replace("Z", "+00:00")
+        ).timestamp())
+    except (TypeError, ValueError, OverflowError):
+        raise ArcRPCError("Arc explorer returned invalid block timestamp") from None
+
+    raw_input = tx.get("raw_input")
+    if not isinstance(raw_input, str) or not re.fullmatch(
+        r"0x(?:[0-9a-fA-F]{2})*", raw_input
+    ):
+        raise ArcRPCError("Arc explorer returned invalid transaction input")
+    if tx.get("token_transfers_overflow"):
+        raise ArcRPCError("Arc explorer transfer list is incomplete")
+    transfers = tx.get("token_transfers")
+    if not isinstance(transfers, list):
+        raise ArcRPCError("Arc explorer returned invalid transfers")
+    usdc_transfers = []
+    for transfer in transfers:
+        if not isinstance(transfer, dict) or not isinstance(transfer.get("token"), dict):
+            raise ArcRPCError("Arc explorer returned invalid transfer")
+        if str(transfer["token"].get("address_hash", "")).lower() != ARC_USDC_ADDRESS:
+            continue
+        if _safe_hash(transfer.get("transaction_hash"), "transfer transaction hash") != tx_hash:
+            raise ArcRPCError("Arc explorer returned a transfer for another transaction")
+        if _decimal_int(transfer.get("block_number"), "transfer block number") != block_number:
+            raise ArcRPCError("Arc explorer returned a transfer from another block")
+        if _safe_hash(transfer.get("block_hash"), "transfer block hash") != block_hash:
+            raise ArcRPCError("Arc explorer returned an inconsistent transfer block")
+        total = transfer.get("total")
+        if not isinstance(total, dict) or _decimal_int(total.get("decimals"), "USDC decimals") != USDC_DECIMALS:
+            raise ArcRPCError("Arc explorer returned invalid USDC decimals")
+        amount = _decimal_int(total.get("value"), "USDC amount")
+        usdc_transfers.append({
+            "token_contract": ARC_USDC_ADDRESS,
+            "from": _explorer_address(transfer.get("from"), "USDC sender"),
+            "to": _explorer_address(transfer.get("to"), "USDC recipient"),
+            "amount_base_units": amount,
+            "amount_usdc": f"{amount / (10 ** USDC_DECIMALS):.6f}",
+        })
+
+    sender = _explorer_address(tx.get("from"), "sender")
+    recipient = _explorer_address(tx.get("to"), "recipient")
+    return {
+        "network": "arc-testnet",
+        "chain_id": ARC_CHAIN_ID,
+        "rpc_host": "explorer.testnet.arc.io",
+        "source_type": "public-explorer-fallback",
+        "found": True,
+        "confirmed": True,
+        "verified": True,
+        "status": "success",
+        "successful": True,
+        "transaction": {
+            "hash": tx_hash,
+            "from": sender,
+            "to": recipient,
+            "block_number": block_number,
+            "block_hash": block_hash,
+            "value_wei": str(_decimal_int(tx.get("value"), "transaction value")),
+            "nonce": _decimal_int(tx.get("nonce"), "transaction nonce"),
+            "input_bytes": (len(raw_input) - 2) // 2,
+        },
+        "receipt": {
+            "transaction_hash": tx_hash,
+            "block_number": block_number,
+            "block_hash": block_hash,
+            "transaction_index": _decimal_int(tx.get("position"), "transaction index"),
+            "gas_used": _decimal_int(tx.get("gas_used"), "gas used"),
+            "cumulative_gas_used": None,
+            "effective_gas_price_wei": str(_decimal_int(tx.get("gas_price"), "gas price")),
+            "contract_address": None,
+            "usdc_transfers": usdc_transfers,
+        },
+        "block": {
+            "number": block_number,
+            "hash": block_hash,
+            "timestamp": timestamp,
+            "timestamp_iso": datetime.fromtimestamp(
+                timestamp, timezone.utc
+            ).isoformat().replace("+00:00", "Z"),
+        },
+    }
+
+
 def verify_transaction(tx_hash):
     """Verify one transaction against Arc Testnet with endpoint fallback."""
     if not isinstance(tx_hash, str) or not TX_HASH_RE.fullmatch(tx_hash):
@@ -386,7 +539,14 @@ def verify_transaction(tx_hash):
                 rpc_errors += 1
 
         if not_found == len(urls):
-            raise TransactionNotFound("transaction not found on Arc Testnet")
+            # Public RPC nodes can lack historical data even though the
+            # transaction is indexed on Arc Testnet. Do not report a false
+            # 404 until the public explorer has also been checked.
+            result = _verify_with_explorer(normalized_hash)
+            if result.get("verified"):
+                _VERIFY_CACHE.clear()
+                _VERIFY_CACHE[normalized_hash] = (time.monotonic(), result)
+            return result
         if rpc_errors or not_found:
             raise ArcRPCError("Arc RPC verification unavailable")
         raise ArcRPCError("Arc RPC verification unavailable")
