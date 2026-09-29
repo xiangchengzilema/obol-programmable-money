@@ -326,7 +326,7 @@ def latest_evidence():
 
 @app.get("/api/arc/transactions/<tx_hash>/verify")
 def verify_arc_transaction(tx_hash):
-    """Strictly re-check the committed evaluation transaction via Arc RPC."""
+    """Strictly re-check the committed evaluation transaction on Arc Testnet."""
     try:
         if not arc_verifier.TX_HASH_RE.fullmatch(tx_hash):
             raise arc_verifier.InvalidTransactionHash(

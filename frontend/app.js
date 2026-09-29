@@ -672,7 +672,7 @@ async function verifyEvaluationEvidence(evidence) {
   const detail = $("#evidence-live-detail");
   const button = $("#verify-evidence-btn");
   if (!status || !detail || !button) return;
-  status.textContent = "checking Arc RPC";
+  status.textContent = "checking Arc Testnet";
   status.className = "pill pill-muted";
   button.disabled = true;
   button.textContent = "Verifying...";
@@ -681,14 +681,16 @@ async function verifyEvaluationEvidence(evidence) {
     const proof = await withTimeout(
       api(`/api/arc/transactions/${encodeURIComponent(hash)}/verify`),
       12000,
-      "Arc RPC verification timed out",
+      "Arc Testnet verification timed out",
     );
     if (proof.verified !== true || proof.successful !== true || proof.evidence_match !== true) {
       throw new Error("on-chain receipt did not match the committed agent evidence");
     }
     const transfer = proof.matched_transfer;
     if (!transfer) throw new Error("bound USDC Transfer event was not returned");
-    status.textContent = "live RPC confirmed";
+    status.textContent = proof.source_type === "public-explorer-fallback"
+      ? "Arc explorer confirmed"
+      : "live RPC confirmed";
     status.className = "pill pill-ok";
     const block = Number(
       proof.receipt?.block_number || proof.block?.number || evidence.arc.block_number
